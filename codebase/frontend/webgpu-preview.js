@@ -230,6 +230,9 @@
       this.geometryUnderlayerRender = null;
       this.activeScopeCount = 0;
       this.deferredDestroy = [];
+      this.pendingGpuRetireBytes = 0;
+      this.gpuRetireFences = new Map();
+      this.fineGrainTransientBytes = 0;
       // Planner state. The budget is an application allocation budget
       // chosen by the user, never a physical VRAM measurement.
       this.memoryBudget = "auto";
@@ -440,7 +443,6 @@
      * Registration is the allocation: there is no second place to forget.
      */
     trackGpuCache(kind, map) {
-      if (!this.gpuAllocator) return map;
       const renderer = this;
       return new Proxy(map, {
         get(target, property) {
@@ -506,15 +508,13 @@
     }
 
     /** Destroy one cache value by kind, without touching its map key. */
-    releaseGpuCacheValue(kind, entry) {
+    releaseGpuCacheValue(kind, entry, unreferenced = false) {
       if (!entry) return;
-      if (kind === "source-proxy" || kind === "scene-luminance") {
-        this.destroyAfterActiveRenders(() => entry.texture?.destroy());
-      } else if (kind === "local-mask") {
-        this.destroyAfterActiveRenders(() => this.destroyLocalMaskEntry(entry));
-      } else {
-        this.destroyAfterActiveRenders(() => entry.texture?.destroy());
-      }
+      if (kind === "oriented-luminance") entry.destroyed = true;
+      this.retireGpuResource(entry.byteSize || 0, () => {
+        if (kind === "local-mask") this.destroyLocalMaskEntry(entry);
+        else entry.texture?.destroy();
+      }, unreferenced);
     }
 
     touchGpuCache(entry) {
@@ -524,52 +524,19 @@
 
     /** Release one registered cache entry by kind and key, through its owner. */
     evictGpuCacheEntry(kind, key, unreferenced = false) {
-      if (kind === "source-proxy") {
-        const proxy = this.proxies.get(key);
-        if (!proxy) return;
-        this.proxies.delete(key);
-        if (unreferenced) proxy.texture?.destroy();
-        else this.destroyAfterActiveRenders(() => proxy.texture?.destroy());
-      } else if (kind === "detail-band-tile") {
-        const entry = this.detailBandTiles.get(key);
-        if (!entry) return;
-        this.detailBandTiles.delete(key);
-        this.detailCacheCounters.evictions += 1;
-        this.destroyAfterActiveRenders(() => entry.texture?.destroy());
-      } else if (kind === "mask-tile") {
-        const entry = this.maskTiles.get(key);
-        if (!entry) return;
-        this.maskTiles.delete(key);
-        if (unreferenced) entry.texture?.destroy();
-        else this.destroyAfterActiveRenders(() => entry.texture?.destroy());
-      } else if (kind === "denoise-tile") {
-        const entry = this.denoiseTiles.get(key);
-        if (!entry) return;
-        this.denoiseTiles.delete(key);
-        this.denoiseTileCounters.evictions += 1;
-        this.destroyAfterActiveRenders(() => entry.texture?.destroy());
-      } else if (kind === "lens-glow-tile") {
-        const entry = this.lensGlowTiles.get(key);
-        if (!entry) return;
-        this.lensGlowTiles.delete(key);
-        this.releaseGpuCacheValue(kind, entry);
-      } else if (kind === "scene-luminance") {
-        const entry = this.sceneLuminance.get(key);
-        if (!entry) return;
-        this.sceneLuminance.delete(key);
-        this.destroyAfterActiveRenders(() => entry.texture?.destroy());
-      } else if (kind === "local-mask") {
-        const entry = this.localMasks.get(key);
-        if (!entry) return;
-        this.localMasks.delete(key);
-        this.destroyAfterActiveRenders(() => this.destroyLocalMaskEntry(entry));
-      } else if (kind === "oriented-luminance") {
-        const entry = this.orientedLuminance.get(key);
-        if (!entry) return;
-        this.orientedLuminance.delete(key);
-        entry.destroyed = true;
-        this.destroyAfterActiveRenders(() => entry.texture?.destroy());
-      }
+      const cache = {
+        "source-proxy": this.proxies, "detail-band-tile": this.detailBandTiles,
+        "mask-tile": this.maskTiles, "denoise-tile": this.denoiseTiles, "lens-glow-tile": this.lensGlowTiles,
+        "scene-luminance": this.sceneLuminance, "local-mask": this.localMasks,
+        "oriented-luminance": this.orientedLuminance, "fine-grain-reduced": this.fineGrainReduced,
+      }[kind];
+      const entry = cache?.get(key);
+      if (!entry) return;
+      cache.delete(key);
+      if (kind === "fine-grain-reduced") this.gpuCacheRelease(entry);
+      if (kind === "detail-band-tile") this.detailCacheCounters.evictions += 1;
+      if (kind === "denoise-tile") this.denoiseTileCounters.evictions += 1;
+      this.releaseGpuCacheValue(kind, entry, unreferenced);
     }
 
     /**
@@ -963,11 +930,9 @@
       this.disposeDenoiseSelectorSeam();
       this.destroyTileGraph();
       this.destroyTileGraph("analysisTileGraph");
-      for (const entry of this.detailBandTiles.values()) this.destroyAfterActiveRenders(() => entry.texture?.destroy());
-      this.detailBandTiles.clear();
+      for (const key of this.detailBandTiles.keys()) this.evictGpuCacheEntry("detail-band-tile", key);
       this.clearLensGlowTiles();
-      for (const entry of this.maskTiles.values()) this.destroyAfterActiveRenders(() => entry.texture?.destroy());
-      this.maskTiles.clear();
+      for (const key of this.maskTiles.keys()) this.evictGpuCacheEntry("mask-tile", key);
       this.dropDenoiseTiles();
       this.denoiseTileIdentity = null;
       this.denoiseTileCounters = { hits: 0, misses: 0, evictions: 0 };
@@ -981,17 +946,11 @@
       this.pendingCacheTrim = null;
       this.sessionId = sessionId;
       this.renderSerials = new WeakMap();
-      for (const proxy of this.proxies.values()) this.destroyAfterActiveRenders(() => proxy.texture?.destroy());
-      this.proxies.clear();
+      for (const key of this.proxies.keys()) this.evictGpuCacheEntry("source-proxy", key);
       this.proxyInflight.clear();
-      for (const scene of this.sceneLuminance.values()) this.destroyAfterActiveRenders(() => scene.texture?.destroy());
-      this.sceneLuminance.clear();
+      for (const key of this.sceneLuminance.keys()) this.evictGpuCacheEntry("scene-luminance", key);
       this.sceneLuminanceInflight.clear();
-      for (const tile of this.orientedLuminance.values()) {
-        tile.destroyed = true;
-        this.destroyAfterActiveRenders(() => tile.texture?.destroy());
-      }
-      this.orientedLuminance.clear();
+      for (const key of this.orientedLuminance.keys()) this.evictGpuCacheEntry("oriented-luminance", key);
       this.orientedLuminanceInflight.clear();
       this.maskExtents?.clear();
       for (const intermediate of this.intermediates.values()) {
@@ -1007,8 +966,7 @@
         });
       }
       this.intermediates.clear();
-      for (const mask of this.localMasks.values()) this.destroyAfterActiveRenders(() => this.destroyLocalMaskEntry(mask));
-      this.localMasks.clear();
+      for (const key of this.localMasks.keys()) this.evictGpuCacheEntry("local-mask", key);
       for (const buffer of this.localParamBuffers.values()) buffer.destroy();
       this.localParamBuffers.clear();
       this.localParamValues.clear();
@@ -1088,10 +1046,44 @@
       else callback();
     }
 
+    retireGpuResource(bytes, destroy, unreferenced = false) {
+      const queue = this.device?.queue;
+      const releaseCharge = this.gpuAllocator?.deferRetirement(bytes);
+      this.pendingGpuRetireBytes += bytes;
+      const removeCharge = () => {
+        this.pendingGpuRetireBytes -= bytes;
+        releaseCharge?.();
+      };
+      const retire = () => {
+        try {
+          destroy();
+        } finally {
+          if (!queue?.onSubmittedWorkDone || !bytes) removeCharge();
+          else {
+            let batch = this.gpuRetireFences.get(queue);
+            if (!batch) {
+              this.gpuRetireFences.set(queue, batch = []);
+              // Group retirements from the same cleanup without fencing each
+              // tile individually. Later retirements get a newer fence.
+              const releaseBatch = () => batch.forEach(release => release());
+              void Promise.resolve().then(() => {
+                this.gpuRetireFences.delete(queue);
+                return queue.onSubmittedWorkDone().then(releaseBatch, releaseBatch);
+              }).catch(releaseBatch);
+            }
+            batch.push(removeCharge);
+          }
+        }
+      };
+      if (unreferenced) retire();
+      else this.destroyAfterActiveRenders(retire);
+    }
+
     flushDeferredDestroy() {
       if (this.resourceRenderCount > 0 || this.activeScopeCount > 0) return;
       const callbacks = this.deferredDestroy.splice(0);
       callbacks.forEach((callback) => callback());
+      if (this.gpuAllocator?.overBudgetBytes > 0) this.scheduleTileCacheTrim();
       if (this.pendingGrainReclaim) {
         this.pendingGrainReclaim = false;
         const snapshot = this.grainMemorySnapshot();
@@ -1156,9 +1148,11 @@
 
     async waitForSubmittedWork() {
       if (!this.available || !this.device) return false;
+      const queue = this.device.queue;
       try {
-        await this.device.queue.onSubmittedWorkDone();
-        return this.available;
+        if (this.gpuRetireFences.has(queue)) await Promise.resolve();
+        await queue.onSubmittedWorkDone();
+        return this.available && this.device?.queue === queue;
       } catch {
         // Device-loss handling owns fallback and resource reset. Backpressure
         // must not turn that asynchronous transition into an unhandled error.
@@ -1286,7 +1280,7 @@
         denoiseEvidenceBytes,
         denoiseReconstructionScratchBytes,
         denoiseResolvedBytes,
-        fineGrainReducedBytes: this.fineGrainReducedBytes(),
+        fineGrainReducedBytes: this.fineGrainReducedBytes() + this.fineGrainTransientBytes,
         parameterBufferBytes,
         presentationSurfaceBytes,
         canvasSwapBytes,
@@ -1304,11 +1298,7 @@
         denoiseReconstructionScratchBytes,
       };
       const cachedBytes = Object.values(cachedCategories).reduce((sum, value) => sum + value, 0);
-      // Submitted GPU work may still reference resources queued for destruction.
-      // These bytes are not part of the current cache, but remain logically live
-      // until queue completion. Destruction callbacks do not expose resource size,
-      // so this starts at zero and is explicitly marked as untracked below.
-      const transientBytes = 0;
+      const transientBytes = this.pendingGpuRetireBytes;
       const largestPresentationBytes = intermediateEntries.reduce(
         (largest, entry) => Math.max(largest, entry.width * entry.height * 8),
         0,
@@ -1341,7 +1331,7 @@
         resident: { totalBytes: residentBytes, categories: residentCategories },
         transient: {
           totalBytes: transientBytes,
-          categories: { submittedWorkPendingDestructionBytes: 0 },
+          categories: { submittedWorkPendingDestructionBytes: transientBytes },
           complete: this.deferredDestroy.length === 0,
         },
         cached: { totalBytes: cachedBytes, categories: cachedCategories },
@@ -2842,10 +2832,6 @@
         this.detailCacheCounters[`${scope}Hits`] += 1;
         return { ...entry, hit: true };
       }
-      if (entry) {
-        const previous = entry;
-        this.destroyAfterActiveRenders(() => previous.texture.destroy());
-      }
       const texture = this.device.createTexture({
         size: { width, height },
         format: "rgba16float",
@@ -2996,7 +2982,7 @@
         const entry = this.denoiseTiles.get(key);
         if (!entry) continue;
         this.denoiseTiles.delete(key);
-        this.destroyAfterActiveRenders(() => entry.texture?.destroy());
+        this.releaseGpuCacheValue("denoise-tile", entry);
       }
     }
 
@@ -3080,10 +3066,8 @@
       for (const [key, entry] of [...this.detailBandTiles]) {
         if (bytes <= budget) break;
         if (protectedKeys.has(key)) continue;
-        this.detailBandTiles.delete(key);
-        this.destroyAfterActiveRenders(() => entry.texture.destroy());
+        this.evictGpuCacheEntry("detail-band-tile", key);
         bytes -= entry.byteSize;
-        this.detailCacheCounters.evictions += 1;
       }
       return bytes;
     }
@@ -4097,8 +4081,7 @@
       for (const [key, entry] of [...this.maskTiles]) {
         if (bytes <= budget) break;
         if (protectedKeys.has(key) || entry.allocatorEntry?.pins) continue;
-        this.maskTiles.delete(key);
-        this.destroyAfterActiveRenders(() => entry.texture.destroy());
+        this.evictGpuCacheEntry("mask-tile", key);
         bytes -= entry.byteSize;
       }
       return bytes;
@@ -4138,6 +4121,7 @@
             this.trimDetailBandTiles();
             this.trimMaskTiles();
             this.trimDenoiseTiles();
+            this.gpuAllocator?.enforceBudget();
             resolve();
           }).catch(reject);
         });
@@ -5642,6 +5626,7 @@
       const canvasPin = this.gpuAllocator?.pin(canvas.hdrGrainLayer?.entry);
       let draftPresentation = null;
       let cleanGrainBlend = null;
+      let reducedGrain = null;
       let draftReturned = false;
       let lensGlowKey = null;
       try {
@@ -5843,7 +5828,7 @@
       }
       const reduceGrain = !microQuick && !sourceOptions?.fineGrainUnderlayer && !sourceOptions?.originalSource
         && !sourceOptions?.delivery && !sourceOptions?.frameAnchor && !sourceOptions?.measureOnly;
-      const reducedGrain = reduceGrain
+      reducedGrain = reduceGrain
         ? await this.ensureFineGrainReduced(proxy, editRevision, currentRender, sourceOptions?.tier === "interactive", sourceOptions?.signal, sourceOptions?.action) : null;
       if (!currentRender()) return refuse("superseded-before-grain-blend");
       if (reducedGrain?.cleanGrainDelta) {
@@ -6544,6 +6529,7 @@
       } finally {
         if (!draftReturned) draftPresentation?.destroy();
         if (cleanGrainBlend) this.destroyAfterActiveRenders(() => cleanGrainBlend.texture.destroy());
+        reducedGrain?.releaseAfterRender?.();
         if (proxyPin) this.gpuAllocator.unpin(proxyPin);
         this.gpuAllocator?.unpin(replacementProxyPin);
         this.gpuAllocator?.unpin(canvasPin);
@@ -6918,11 +6904,7 @@
     releaseFineGrainReduced(key) {
       const cache = this.fineGrainReduced;
       for (const id of key === undefined ? [...(cache?.keys() || [])] : [key]) {
-        const entry = cache?.get(id);
-        if (!entry) continue;
-        cache.delete(id);
-        this.gpuAllocator?.unregister(entry.allocatorEntry);
-        this.destroyAfterActiveRenders(() => entry.texture.destroy());
+        this.evictGpuCacheEntry("fine-grain-reduced", id);
       }
     }
 
@@ -7094,7 +7076,9 @@
     }
 
     grainMemorySnapshot(requestedBytes = null) {
-      const { totalBytes, categories } = this.resourceMemorySnapshot().resident;
+      const { resident, transient } = this.resourceMemorySnapshot();
+      const { categories } = resident;
+      const totalBytes = resident.totalBytes + transient.totalBytes;
       // Parked Grain layers already have a cache entry. Active canvases do
       // not, so include just those on the allocator side of the same ledger.
       const allocatorBytes = (this.gpuAllocator?.usedBytes() || 0)
@@ -7234,7 +7218,13 @@
         count++;
         released += entry.bytes;
         evictedByKind[entry.kind] = (evictedByKind[entry.kind] || 0) + entry.bytes;
-        if (!appAlreadyOver && requested != null && HDRGrainRoute.headroom(this.grainMemorySnapshot()) >= requested) break;
+        if (!appAlreadyOver && requested != null) {
+          const projected = this.grainMemorySnapshot();
+          const retiring = this.pendingGpuRetireBytes;
+          projected.resident_bytes = Math.max(0, projected.resident_bytes - retiring);
+          projected.allocator_bytes = Math.max(0, projected.allocator_bytes - retiring);
+          if (HDRGrainRoute.headroom(projected) >= requested) break;
+        }
       }
       this.grainEvent?.("grain_eviction", count ? "gpu" : "refused",
         count ? "rebuildable_cache_released" : "no_reclaimable_resources", context, {
@@ -7567,13 +7557,26 @@
         assertCurrent();
         const entry = { ...result, sourceFrame: { width: proxy.width, height: proxy.height, workingSpace: proxy.workingSpace } };
         const budget = this.denoiseTileBudget();
-        while (this.fineGrainReduced.size && (this.fineGrainReduced.size >= FINE_GRAIN_REDUCED_CACHE_SIZE
-          || this.fineGrainReducedBytes() + entry.byteSize > budget)) {
-          this.releaseFineGrainReduced(this.fineGrainReduced.keys().next().value);
+        if (entry.byteSize <= budget) {
+          while (this.fineGrainReduced.size && (this.fineGrainReduced.size >= FINE_GRAIN_REDUCED_CACHE_SIZE
+            || this.fineGrainReducedBytes() + entry.byteSize > budget)) {
+            this.releaseFineGrainReduced(this.fineGrainReduced.keys().next().value);
+          }
+          entry.allocatorEntry = this.gpuAllocator?.register({ kind: "fine-grain-reduced", key, bytes: entry.byteSize,
+            evict: () => this.releaseFineGrainReduced(key) });
+          this.fineGrainReduced.set(key, entry);
+        } else {
+          // The exact pixels are still usable by this draw, but must not
+          // displace warm entries or exceed the reduced-picture cache cap.
+          entry.allocatorEntry = this.gpuAllocator?.register({ kind: "fine-grain-reduced-transient",
+            bytes: entry.byteSize, pinned: true });
+          this.fineGrainTransientBytes += entry.byteSize;
+          entry.releaseAfterRender = () => {
+            this.fineGrainTransientBytes -= entry.byteSize;
+            this.gpuCacheRelease(entry);
+            this.releaseGpuCacheValue("fine-grain-reduced", entry);
+          };
         }
-        entry.allocatorEntry = this.gpuAllocator?.register({ kind: "fine-grain-reduced", key, bytes: result.byteSize,
-          evict: () => this.releaseFineGrainReduced(key) });
-        this.fineGrainReduced.set(key, entry);
         owned.shift();
         this.recordStage(micro ? "micro-grain-fit-exact" : "fine-grain-reduced", { durationMs: performance.now() - start, width, height });
         if (action && !micro) globalThis.HDRDiagnostics?.event?.("denoise", "grain_reduced_work", {
@@ -8656,10 +8659,14 @@
         // Detached owners cannot be picked up by the next render. Existing
         // encoders may still hold them, so let those unwind before fencing
         // the submissions and allowing the next Grade admission.
-        const retired = new Promise(resolve => this.destroyAfterActiveRenders(() => {
+        const selectorBytes = (selector?.cache?.byteSize || 0) + (selector?.resolved?.byteSize || 0);
+        const retired = new Promise(resolve => this.retireGpuResource(selectorBytes, () => {
           this.destroyDenoiseSelector(selector);
           resolve();
-        })).then(() => queue?.onSubmittedWorkDone()).catch(() => {});
+        })).then(async () => {
+          if (this.gpuRetireFences.has(queue)) await Promise.resolve();
+          await queue?.onSubmittedWorkDone();
+        }).catch(() => {});
         const pending = Promise.all([this.denoiseRetirement, retired]).finally(() => {
           if (this.denoiseRetirement === pending) this.denoiseRetirement = null;
         });
@@ -10482,7 +10489,6 @@
       const firstLeaf = firstResolvedMaskLeaf(resolved);
       const passCount = gpuMaskGraphPassCount(local.mask);
       if (!entry || entry.width !== firstLeaf.width || entry.height !== firstLeaf.height || entry.nodeTextures.length !== passCount) {
-        if (entry) this.destroyAfterActiveRenders(() => this.destroyLocalMaskEntry(entry));
         const nodeTextures = Array.from({ length: passCount }, () => this.createMaskTexture(firstLeaf.width, firstLeaf.height));
         entry = {
           kind: "gpu-mask-graph",
@@ -10586,9 +10592,7 @@
         const keys = [...this.sceneLuminance.keys()].filter((candidate) => candidate.startsWith(prefix));
         while (keys.length > 2) {
           const staleKey = keys.shift();
-          const stale = this.sceneLuminance.get(staleKey);
-          this.destroyAfterActiveRenders(() => stale?.texture?.destroy());
-          this.sceneLuminance.delete(staleKey);
+          this.evictGpuCacheEntry("scene-luminance", staleKey);
         }
         return { ...entry, created: true };
       })();
@@ -10958,8 +10962,7 @@
       for (const [key, entry] of entries) {
         if (total <= budget) break;
         if (entry.lastUseSerial === this.maskUseSerial) continue;
-        this.destroyAfterActiveRenders(() => this.destroyLocalMaskEntry(entry));
-        this.localMasks.delete(key);
+        this.evictGpuCacheEntry("local-mask", key);
         total -= entry.byteSize;
       }
     }

@@ -338,6 +338,38 @@ test("budget pressure evicts the global LRU across cache kinds, through each ent
   assert.ok(preview.maskTiles.get("mask:lru").allocatorEntry);
 });
 
+test("evicted textures stay charged through the active encoder and the owning queue fence", async () => {
+  const { preview, ledger } = createPreview();
+  let finish;
+  preview.device.queue = { onSubmittedWorkDone: () => new Promise(resolve => { finish = resolve; }) };
+  const retiring = cacheTexture(preview, 8, 8);
+  const warm = cacheTexture(preview, 8, 8);
+  let destroys = 0;
+  const destroy = retiring.texture.destroy;
+  retiring.texture.destroy = () => { destroys++; destroy(); };
+  preview.denoiseTiles.set("retiring", retiring);
+  preview.maskTiles.set("warm", warm);
+  preview.activeRenderCount = 1;
+  preview.gpuAllocator.setBudget(warm.byteSize);
+  assert.equal(preview.denoiseTiles.has("retiring"), false);
+  assert.equal(preview.maskTiles.has("warm"), true);
+  assert.equal(preview.gpuAllocator.usedBytes(), ledger.liveBytes);
+  assert.equal(preview.resourceMemorySnapshot().transient.totalBytes, retiring.byteSize);
+  assert.equal(destroys, 0);
+  preview.evictGpuCacheEntry("denoise-tile", "retiring");
+  // Independent fixture: exercise the retirement fence, not the idle trim.
+  preview.scheduleTileCacheTrim = () => {};
+  preview.finishActiveRender();
+  await Promise.resolve();
+  assert.equal(destroys, 1);
+  assert.equal(preview.gpuAllocator.snapshot().pendingRetireBytes, retiring.byteSize);
+  finish();
+  await Promise.resolve();
+  assert.equal(preview.resourceMemorySnapshot().transient.totalBytes, 0);
+  assert.equal(preview.gpuAllocator.usedBytes(), ledger.liveBytes);
+  assert.equal(destroys, 1);
+});
+
 test("calibrated Auto lowers the budget, adopts the allocator, and reports its source", () => {
   const { preview } = createPreview();
   preview.adapterInfo = {
