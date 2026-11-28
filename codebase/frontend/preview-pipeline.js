@@ -315,6 +315,9 @@ async function settlePreviewFrame(lane, task, action) {
     && state.acceptedPresentation.generation === state.previewGeneration[lane]
     && state.acceptedPresentation.geometrySignature === geometrySignature()
     && state.acceptedPresentation.processedLongEdge === refinementProxyLongEdge()) {
+    // Keeping the exact drag frame emits no new presentation event. Now
+    // that the edit is synced, wake its pending Peak Fit measurement.
+    wakePendingHighlightAnchor(lane);
     prepareInactivePreview();
     window.HDRProofing?.settled(lane);
     return true;

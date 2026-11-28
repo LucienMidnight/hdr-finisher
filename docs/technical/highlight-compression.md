@@ -269,7 +269,9 @@ maximum. Small source patches queue the original bytes without a staging wait.
 On neutral paper the patch maxima keep their individual float32 slots and
 are read together. On HDR, changing only Start or Highlight Detail can reuse
 the last matching native measurement. Target remains part of its identity
-because global Tone Whites uses it before compression.
+because global Tone Whites uses it before compression. When release retains
+an already exact drag frame, the synced settle path wakes the pending native
+measurement without waiting for the fallback timer or drawing another frame.
 
 ## UI, graph, and scopes
 
