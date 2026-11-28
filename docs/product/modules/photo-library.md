@@ -1,3 +1,20 @@
+### November 28, 2026: source too large for the configured GPU
+
+When a Library source and the existing draw reserve cannot fit even an empty
+GPU, a confirmed budget lets Library stop waiting on that GPU request and use
+its normal CPU development route. It asks for a fresh CPU grant before taking
+a development place. The CPU memory limits, system reserve and saved repairs
+still apply. Visible, selected and explicitly requested development can use
+this route. Speculative work does not start CPU development, even if it shares
+a source request with another picture size.
+
+Grade opening still goes first. Temporary competition for GPU memory still
+waits, and an unknown GPU budget cannot trigger this refusal. No estimate,
+cache, GPU retry rule or Grade, Proof or Export route changes. On the 8 GB
+MacBook Neo the existing CPU route replayed all seven DSC04375 repairs and
+presented the previously stalled thumbnail.
+[Check conditions and timing](../../technical/performance-table.md#november-28-2026--mac-library-fallback-for-a-source-too-large-for-the-gpu).
+
 ### November 27, 2026: CPU progress and banded development
 
 Steve approved CPU-specific limits for fallback and CPU-only machines. Helper

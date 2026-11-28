@@ -375,6 +375,80 @@ def test_atomic_gpu_wait_holds_neither_resource_and_saving_releases_gpu():
     assert a.estimate == GB
 
 
+def test_empty_gpu_capacity_refuses_repaired_source_before_ram_gates(monkeypatch):
+    logs, notices = [], []
+    monkeypatch.setattr('hdr_finisher.library_scheduler.log', lambda event, **fields: logs.append((event, fields)))
+    for ceiling in (4*GB, 2*GB):
+        s = Scheduler(ceiling)
+        s.update(available=4_290_000_000, ram=8*GB)
+        s.gpu_draw_room = 93_323_264
+        s.update_gpu(2_147_483_648, external=150_000_000, paused=ceiling == 2*GB, budget_known=True)
+        job = s.ask('gpu', 'window', 'DSC04375.ARW', 'source', 295_000_000,
+                    gpu_bytes=2_109_988_864, gpu_unified=True, notify=notices.append)
+        assert [notice['type'] for notice in notices] == ['gpu-too-large']
+        assert job.ready.is_set() and job.granted is None and not s.jobs
+        assert not s.reclamation and s.gpu_reserved() == 0
+        event, fields = logs[-1]
+        assert (event, fields['outcome']) == ('library_grant_completed', 'gpu_too_large')
+        assert fields['granted_at'] is None
+        assert fields['gpu_budget_bytes'] == 2_147_483_648
+        # The CPU route gets its own estimate and still obeys the system reserve.
+        s.update(available=3*GB, ram=8*GB)
+        cpu = s.ask('cpu', 'window', job.path, 'cpu', 1_059_955_200)
+        assert cpu.reason == 'system reserve' and cpu.granted is None
+        s.update(available=4_290_000_000, ram=8*GB)
+        assert cpu.granted is not None and s.gpu_reserved() == 0
+        notices.clear()
+
+
+def test_fitting_gpu_source_still_waits_for_competing_leases_and_grade_activity():
+    s = fresh(8*GB)
+    s.gpu_draw_room = 100
+    s.update_gpu(1000, budget_known=True)
+    active = s.ask('active', 'window', 'first.raw', 'source', FAST_BYTES, gpu_bytes=200)
+    assert active.granted is not None
+    s.update_gpu(1000, external=50, paused=True, budget_known=True)
+    notices = []
+    fitting = s.ask('fitting', 'window', 'next.raw', 'source', FAST_BYTES,
+                    gpu_bytes=900, notify=notices.append)
+    assert notices[-1]['reason'] == 'GPU needed by Grade or export'
+    s.update_gpu(1000, external=50, budget_known=True)
+    assert notices[-1]['reason'] == 'GPU memory' and fitting.granted is None
+    s.finish(active.id)
+    assert fitting.granted is None
+    s.update_gpu(1000, budget_known=True)
+    assert fitting.granted is not None
+    assert [notice['type'] for notice in notices] == ['waiting', 'waiting', 'granted']
+
+
+def test_confirmed_gpu_refusal_releases_oldest_ram_guard_and_admits_fitting_job():
+    s = Scheduler(4*GB)
+    s.update(total=2_500_000_000, caches=2*GB, available=6*GB, ram=8*GB)
+    s.gpu_draw_room = 93_323_264
+    blocked = s.ask('unknown', 'window', 'large.raw', 'source', 2*GB, gpu_bytes=2_100_000_000)
+    s.update(total=2_500_000_000, caches=2*GB, available=6*GB, ram=8*GB)
+    assert blocked.granted is None and s.reclamation['id'] == blocked.id
+    fitting = s.ask('fits', 'window', 'small.raw', 'source', FAST_BYTES, gpu_bytes=1000)
+    assert fitting.granted is None
+    s.update_gpu(2**31, budget_known=True)
+    assert blocked.id not in s.jobs and not s.reclamation
+    assert fitting.granted is not None
+
+
+def test_oversize_source_defers_terminal_decision_during_grade_opening():
+    s = fresh(4*GB)
+    s.gpu_draw_room = 100
+    s.update_gpu(1000, budget_known=True)
+    opening = s.ask('grade', 'backend', 'photo', 'grade-import', 0, 'Grade')
+    notices = []
+    job = s.ask('later', 'window', 'photo.raw', 'source', FAST_BYTES,
+                gpu_bytes=901, notify=notices.append)
+    assert job.id in s.jobs and notices[-1]['reason'] == 'paused for Grade'
+    s.finish(opening.id)
+    assert job.id not in s.jobs
+    assert [notice['type'] for notice in notices] == ['waiting', 'gpu-too-large']
+
+
 def test_unified_gpu_is_charged_to_ram_without_changing_base_estimate():
     s = fresh(GB)
     s.update_gpu(4*GB)

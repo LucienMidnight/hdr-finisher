@@ -492,7 +492,11 @@ def create_gpu_delivery_router():
             scheduler.preempt_gpu()
         scheduler.update_gpu(_activity["budget"], _activity["bytes"] + raw_reserved()
                              + sum(v[1].get("reservation", 0) for v in active.values()),
-                             bool(deliveries or active or time.monotonic() < _activity["until"]))
+                             bool(deliveries or active or time.monotonic() < _activity["until"]),
+                             # A missing or expired client leaves a placeholder,
+                             # not proof that the configured GPU cannot fit a job.
+                             budget_known=bool(values) and all(v["budget_reported"] for v in values)
+                             and _activity["budget"] > 0)
 
     @router.post("/activity")
     async def activity(request: Request):
@@ -502,6 +506,7 @@ def create_gpu_delivery_router():
             _clients[key] = {"expires": time.monotonic() + 2,
                 "until": time.monotonic() + .25 if value.get("active") else 0.,
                 "bytes": max(0, int(value.get("bytes", 0))),
+                "budget_reported": "budget" in value,
                 "budget": max(0, int(value.get("budget", 536870912)))}
             accounting()
             reserved = scheduler.gpu_reserved() + raw_reserved() + sum(v[1].get("reservation", 0) for v in active.values())

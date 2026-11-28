@@ -26,6 +26,20 @@ test('reconnect resubmits waiting work once and aborts and restarts active work'
  for(const j of sockets[1].sent.filter(v=>v.type==='ask'))sockets[1].receive({type:'granted',id:j.id});
  assert.equal(await active,42);grants.finish(await waiting);grants.close();
 });
+test('a terminal GPU capacity refusal is typed and not replayed on reconnect',async()=>{
+ const {grants,sockets,timers}=setup(),controller=new AbortController();
+ const oversized=grants.acquire('repaired.arw','source',controller.signal,10,640,2_109_988_864,true);
+ const fitting=grants.acquire('other.arw','source',controller.signal,10,640,500_000_000,true);
+ sockets[0].open();const [first,second]=sockets[0].sent;
+ sockets[0].receive({type:'waiting',id:first.id,reason:'system reserve'});
+ sockets[0].receive({type:'gpu-too-large',id:first.id});
+ await assert.rejects(oversized,error=>error.gpuTooLarge===true&&!error.gpuUnavailable&&!error.needsMemory);
+ assert.deepEqual(grants.snapshot().jobs.map(job=>job.path),['other.arw']);
+ assert.equal(sockets[0].sent.length,2,'No finish is needed for a dropped ask');
+ sockets[0].close();timers.shift()();sockets[1].open();
+ assert.deepEqual(sockets[1].sent.filter(value=>value.type==='ask').map(value=>value.id),[second.id]);
+ controller.abort();await assert.rejects(fitting,{name:'AbortError'});grants.close();
+});
 test('finishing and changed outcomes release their grant exactly once',async()=>{
  const {grants,sockets}=setup();const work=grants.run('photo.jpg','quick',null,async()=>{throw Error('Photo changed during read');});sockets[0].open();sockets[0].receive({type:'granted',id:sockets[0].sent[0].id});
  await assert.rejects(work,/changed/);assert.equal(sockets[0].sent.at(-1).outcome,'changed');assert.equal(grants.snapshot().jobs.length,0);grants.close();

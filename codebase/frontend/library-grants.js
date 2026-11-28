@@ -21,6 +21,11 @@
           finish(j,"needs more memory");
           j.reject(Object.assign(Error(waitingText({...value,reason:"needs more memory"})),{needsMemory:true,estimate:value.estimate}));return;
         }
+        if(j&&value.type==="gpu-too-large"){
+          // The server already dropped this ask. Nothing to finish or replay.
+          jobs.delete(j.id);j.detach();
+          j.reject(Object.assign(Error("The source and draw room exceed the configured GPU budget."),{gpuTooLarge:true}));changed();return;
+        }
         if(j){if(value.type==="gpu-preempt"){j.connection.abort();return;}if(value.type==="saving"){j.saveResolve?.();return;}j.status=value;if(value.type==="waiting")j.granted=false;if(value.type==="granted"&&!j.granted){j.granted=true;j.started=true;j.resolve(j);}}
         changed();
       };

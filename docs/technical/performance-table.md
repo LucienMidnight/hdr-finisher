@@ -1,3 +1,27 @@
+## November 28, 2026 — Mac Library fallback for a source too large for the GPU
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794, v0.9.4 plus the change in this commit.
+Separate fresh plain-Electron profiles under the GPU lock, installed app
+closed, existing 4 GB app setting and system reserve. The same verified
+DSC04375.ARW and saved grade as in the preceding diagnosis were used, with
+only the repairs removed in the disposable control. One diagnostic observation
+per route, not a general thumbnail speed comparison.
+
+| Action | Grid request to presented thumbnail | Result |
+| --- | --- | --- |
+| DSC04375 with the seven saved repairs | 6.35 s, previously not pictured in 27 s | One terminal GPU refusal, no GPU development or retry, then a fresh CPU grant with no admission wait. The source ran for 5.95 s and logged replay of all seven repairs. App tree peaked at 1.83 GB, minimum system availability was 3.61 GB, and the quick check passed. |
+| DSC04375 control with no repairs | 1.48 s | GPU development as before, no fallback. The app drew the thumbnail, but independent system availability briefly reached 1.08 GB and the harness failed the unchanged system-reserve check, as in the pre-change control. |
+
+No changes to original RAWs, grades, the 2 GB system reserve, app/GPU budgets,
+estimates or repair algorithms. Full fast checks completed with no failures
+(Node 1,583 passed, one skipped. Python 5,147 passed in the parallel phase,
+47 passed in the serial phase, 126 skipped and one existing expected failure
+passed). Evidence is in
+`codebase/output/quick-library-check/mac-gpu-capacity-{repair,control}-verify/`
+(`backend.log`, `memory.jsonl` and `report.json`) and
+`codebase/output/thumb-admission-verification/` (`real-app-summary.json` and
+the fast test logs).
+
 ## November 28, 2026 — Mac Library thumbnail reservation, paired repair test
 
 MacBook Neo, A18 Pro, 8 GB, 1408×794, v0.9.4 app code at `2bf59b84`

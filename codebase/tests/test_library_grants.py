@@ -36,6 +36,48 @@ def test_channel_queues_once_promotes_finishes_and_cleans_up_two_windows(tmp_pat
         assert not scheduler.jobs
 
 
+def test_channel_reports_gpu_too_large_only_after_configured_budget_arrives(tmp_path, monkeypatch):
+    from hdr_finisher import gpu_delivery, library_scheduler
+    s = Scheduler()
+    s.update(available=4_290_000_000, ram=8_000_000_000)
+    monkeypatch.setattr(library_scheduler, 'scheduler', s)
+    monkeypatch.setattr(library_grants, 'scheduler', s)
+    monkeypatch.setattr(gpu_delivery, '_clients', {})
+    monkeypatch.setattr(gpu_delivery, '_activity', dict(gpu_delivery._activity))
+    monkeypatch.setenv(gpu_delivery.ROOT_ENV, '')
+    monkeypatch.delenv('HDR_FINISHER_DESKTOP_SECRET', raising=False)
+    monkeypatch.setattr(library_grants, 'estimate_details',
+                        lambda path, kind, ceiling, edge: (1_059_955_200 if kind == 'cpu' else 295_000_000, ''))
+    app = FastAPI()
+    app.include_router(gpu_delivery.create_gpu_delivery_router())
+    router = APIRouter()
+    library_grants.add_routes(router, type('Marks', (), {'source_path': staticmethod(Path)})())
+    app.include_router(router)
+    path = str(tmp_path / 'DSC04375.ARW')
+    with TestClient(app) as client, client.websocket_connect('/grants') as window:
+        assert window.receive_json()['type'] == 'grade'
+        assert window.receive_json()['type'] == 'grade-opening'
+        assert client.get('/api/delivery/gpu/permit').json()['budget'] == 512*1024**2
+        window.send_json(dict(type='ask', id='gpu', path=path, gpu_bytes=2_109_988_864, gpu_unified=True))
+        assert window.receive_json()['reason'] == 'system reserve'
+        for payload in ({'id': 'grade'}, {'id': 'grade', 'budget': 0}):
+            assert client.post('/api/delivery/gpu/activity', json=payload).status_code == 200
+            window.send_json(dict(type='heartbeat'))
+            assert window.receive_json()['type'] == 'heartbeat' and 'gpu' in s.jobs
+        assert client.post('/api/delivery/gpu/activity', json={'id': 'grade', 'budget': 2**31, 'bytes': 17}).status_code == 200
+        refusal = window.receive_json()
+        assert (refusal['type'], refusal['id']) == ('gpu-too-large', 'gpu')
+        assert 'gpu' not in s.jobs and s.gpu_reserved() == 0
+        window.send_json(dict(type='ask', id='cpu', path=path, kind='cpu'))
+        granted = window.receive_json()
+        assert (granted['type'], granted['id'], granted['estimate'], granted['gpu_bytes']) == ('granted', 'cpu', 1_059_955_200, 0)
+        window.send_json(dict(type='finish', id='cpu'))
+        window.send_json(dict(type='heartbeat'))
+        assert window.receive_json()['type'] == 'heartbeat' and not s.jobs
+        gpu_delivery._clients['grade']['expires'] = 0
+        assert client.get('/api/delivery/gpu/permit').json()['budget'] == 512*1024**2
+        window.send_json(dict(type='ask', id='new-gpu', path=path, gpu_bytes=2_109_988_864, gpu_unified=True))
+        assert window.receive_json()['reason'] == 'system reserve' and 'new-gpu' in s.jobs
 def test_grade_retention_does_not_trigger_own_target_trims_but_os_pressure_does(monkeypatch):
     from hdr_finisher import app_memory
     monkeypatch.setattr(app_memory,"grade_bytes_provider",lambda:5_000_000_000)

@@ -39,14 +39,48 @@ window.HDRLibraryScenes = (() => {
   const probes = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {onChange:changed});
   // Explicit preparations finish their cache even if the immediate waiter
   // detaches. Grid and filmstrip demand use viewport ownership.
+  const gpuTooLarge = "gpu-too-large";
+  const cpuDemand = job => [...job.users].filter(user=>user.explicitDevelop ||
+    (user.effectivePriority < 50 && (!user.gpuOnly || user.effectivePriority === 0)));
+  const cpuPriority = demand => Math.min(80,...demand.map(user=>user.effectivePriority));
   const sources = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {
     heavyLimit:cpuLanes,onChange:changed,fifo:true,
     admit:async job=>{
       // Finish visible camera/original checks before admitting full developments.
       // No grant or decode place is held while discovery is pending.
       const discovered=waitForDiscoveries(job);if(discovered)await discovered;
-      const gpu=!job.cpuRoute&&HDRLibraryGpuRaw.enabled()&&HDRLibraryGpuRaw.preflight ? await HDRLibraryGpuRaw.preflight(job.gpuMeta,job.edge,job.controller.signal) : {bytes:0,unified:false};
-      job.grant=await HDRLibraryGrants.acquire(job.path,!job.cpuRoute&&HDRLibraryGpuRaw.enabled()?"source":"cpu",job.controller.signal,job.priority,job.edge,gpu.bytes,gpu.unified,!!job.front);
+      const signal=job.controller.signal;
+      const acquire=(kind,edge,bytes=0,unified=false)=>HDRLibraryGrants.acquire(job.path,kind,signal,job.priority,edge,bytes,unified,!!job.front);
+      if(!job.cpuRoute&&HDRLibraryGpuRaw.enabled()){
+        const gpu=HDRLibraryGpuRaw.preflight ? await HDRLibraryGpuRaw.preflight(job.gpuMeta,job.edge,signal) : {bytes:0,unified:false};
+        try {
+          job.grant=await acquire("source",job.edge,gpu.bytes,gpu.unified);
+          return true;
+        } catch(error){
+          if(!error.gpuTooLarge||signal.aborted)throw error;
+          job.cpuRoute=gpuTooLarge;
+          if(cpuDemand(job).length)window.HDRLibraryStopwatch?.("picture_source_cpu_selected",{path:job.path,reason:job.cpuRoute});
+        }
+      }
+      if(job.cpuRoute===gpuTooLarge){
+        job.valueFor=(values,user)=>values?.get(user.edge)??null;
+        // Re-evaluate who needs this photo now, not who started the GPU ask.
+        // On lane requeue, keep the chosen route and ask only for CPU memory.
+        for(;;){
+          signal.throwIfAborted();
+          const demand=cpuDemand(job);
+          if(!demand.length)return null;
+          const wanted=new AbortController(), pending=AbortSignal.any([signal,wanted.signal]);
+          job.onDemand=()=>{if(!cpuDemand(job).length)wanted.abort();};
+          try {
+            job.grant=await HDRLibraryGrants.acquire(job.path,"cpu",pending,cpuPriority(demand),demand[0].edge,0,false,!!job.front);
+            if(!pending.aborted)return true;
+          } catch(error){
+            if(!wanted.signal.aborted||signal.aborted)throw error;
+          } finally {job.onDemand=null;}
+        }
+      }
+      job.grant=await acquire("cpu",job.edge);
       return true;
     },
     keepRunning:job=>job.retainDetached||(job.edge<=640&&visible.has(job.path))});
@@ -64,7 +98,7 @@ window.HDRLibraryScenes = (() => {
     error.libraryError = result.library_error || (result.library_timeout ? {path:result.path,reason:result.detail,timeout:true,time:Date.now()/1000} : undefined);
     return error;
   }
-  async function prepared(path, edge, signal, priority, identity, trace = null, options = {}) {
+  async function prepared(path, edge, signal, priority, identity, trace, options, refusedSource) {
     const discovery={path,priority:typeof priority==="function"?priority():priority,viewport:!!options.viewportDemand};
     discoveries.add(discovery);
     try {
@@ -88,6 +122,7 @@ window.HDRLibraryScenes = (() => {
     const display = meta => meta ? {...meta, unedited_raw:!!plan.unedited_raw} : meta;
     const version=plan.render_identity || plan.source_identity || plan.revision;
     const sourceVersion=plan.source_identity || version;
+    const cpuRoute=plan.cpu_route || (refusedSource && refusedSource===sourceVersion ? gpuTooLarge : null);
     if(versions.has(path)&&versions.get(path)!==sourceVersion)sources.invalidate(candidate=>candidate===path);
     versions.delete(path);versions.set(path,sourceVersion);
     if(versions.size>1024)versions.delete(versions.keys().next().value);
@@ -134,23 +169,34 @@ window.HDRLibraryScenes = (() => {
       const started = performance.now();
       window.HDRLibraryStopwatch?.("picture_development_start",{path,reason:options.develop ? "Develop command" : edge === 100000 ? "zoom detail" : plan.edited ? "edited" : plan.unedited_raw ? "no usable camera picture" : "HDR non-RAW",view:trace?.view});
       try {
-        const result = await HDRLibraryGrants.run(path,!plan.cpu_route&&HDRLibraryGpuRaw.enabled()?"source":"cpu",shared,
+        const result = await HDRLibraryGrants.run(path,!job.cpuRoute&&HDRLibraryGpuRaw.enabled()?"source":"cpu",shared,
           async (grant,owned)=>{
-            if(plan.cpu_route)window.HDRLibraryStopwatch?.("picture_source_cpu_selected",{path,reason:plan.cpu_route});
-            const run=size=>develop(path,size,owned,importance,version,options.gpuOnly || (priority >= 80 && !visible.has(path)),grant,plan.cpu_route,shareTiers ? job.edges : null,!!options.develop);
-            if(!shareTiers || (!plan.cpu_route && HDRLibraryGpuRaw.enabled()))return run(edge);
+            const capacityFallback=job.cpuRoute===gpuTooLarge;
+            if(job.cpuRoute&&!capacityFallback)window.HDRLibraryStopwatch?.("picture_source_cpu_selected",{path,reason:job.cpuRoute});
+            const cpuImportance=capacityFallback?()=>cpuPriority(cpuDemand(job)):importance;
+            const run=size=>develop(path,size,owned,cpuImportance,version,options.gpuOnly || (priority >= 80 && !visible.has(path)),grant,job.cpuRoute,shareTiers ? job.edges : null,!!options.develop);
+            if(!capacityFallback&&(!shareTiers || (!job.cpuRoute && HDRLibraryGpuRaw.enabled())))return run(edge);
             const tasks=new Map();
             const add=size=>{if(!tasks.has(size)){const task=run(size);task.catch(()=>{});tasks.set(size,task);}};
-            job.onTier=add;
+            const addRequested=()=>{if(!owned.aborted)for(const user of cpuDemand(job))add(user.edge);};
+            if(capacityFallback)job.onDemand=addRequested;else job.onTier=add;
             try {
-              for(const size of job.edges)add(size);
+              if(capacityFallback){owned.throwIfAborted();addRequested();}else for(const size of job.edges)add(size);
               let values;
               do {values=await Promise.all([...tasks.values()]);} while(values.length!==tasks.size);
-              return values[0];
-            } finally {job.onTier=null;}
+              return capacityFallback ? new Map([...tasks.keys()].map((size,i)=>[size,values[i]])) : values[0];
+            } finally {job.onDemand=job.onTier=null;}
           },importance,job.grant,{requeueLane:true});
-        if (result && signal?.aborted) save(result);
+        if (result && signal?.aborted) {
+          if(job.cpuRoute===gpuTooLarge){for(const meta of result.values())if(meta)save(meta);}
+          else save(result);
+        }
         return result;
+      } catch(error) {
+        // The existing transient CPU retry can rediscover the scene, but it
+        // must not ask the GPU again for the same known-unfit source.
+        if(job.cpuRoute===gpuTooLarge)error.cpuCapacitySource=sourceVersion;
+        throw error;
       }
       finally {
         if (!shared.aborted) {
@@ -159,7 +205,7 @@ window.HDRLibraryScenes = (() => {
           if (history.size > 256) history.delete(history.keys().next().value);
         }
       }
-    }, signal, priority, {heavy,cost,path,edge,cpuRoute:plan.cpu_route,gpuMeta:plan.gpu_meta,viewport:!!options.viewportDemand,retainDetached:!options.viewportDemand,log_view:trace?.view,stage:"Developing photo"});
+    }, signal, priority, {heavy,cost,path,edge,cpuRoute,gpuMeta:plan.gpu_meta,viewport:!!options.viewportDemand,retainDetached:!options.viewportDemand,gpuOnly:!!options.gpuOnly,explicitDevelop:!!options.develop,log_view:trace?.view,stage:"Developing photo"});
     options.onSourceDemand?.();
     const result=await pending;
     if(result && result.path && result.path!==path){
@@ -179,8 +225,9 @@ window.HDRLibraryScenes = (() => {
   }
   async function load(path, edge, signal, priority = 10, trace = null, options = {}) {
     const generation=generations.get(path)||0;
+    let refusedSource=null;
     for(let attempt=1;;attempt++){
-      try { return await loadOnce(path,edge,signal,priority,trace,options); }
+      try { return await loadOnce(path,edge,signal,priority,trace,options,refusedSource); }
       catch(error){
         if(error.name==="AbortError" || signal?.aborted || generation!==(generations.get(path)||0) || error.laneRequeue || error.cloudOnly || error.needsMemory)throw error;
         if (/not enough memory|waiting for memory to save detail/i.test(error.message)) { error.needsMemory=true; throw error; }
@@ -190,6 +237,7 @@ window.HDRLibraryScenes = (() => {
         // temporary cause. A development failure repeats with the same input,
         // so it is recorded at once; GPU development errors already went to the CPU.
         if(retryable && attempt<2){
+          refusedSource=error.cpuCapacitySource;
           window.HDRLibraryStopwatch?.("picture_preparation_retry",{path,attempt,reason:error.message});
           await wait(attempt===1?500:1500,signal);continue;
         }
@@ -204,14 +252,14 @@ window.HDRLibraryScenes = (() => {
       }
     }
   }
-  async function loadOnce(path, edge, signal, priority = 10, trace = null, options = {}) {
+  async function loadOnce(path, edge, signal, priority, trace, options, refusedSource) {
     const generation=generations.get(path)||0;
     const identity = path + (edge === 100000 ? "|native" : "");
-    let meta = await prepared(path, edge, signal, priority, identity, trace, options);
+    let meta = await prepared(path, edge, signal, priority, identity, trace, options, refusedSource);
     if (!meta) return null;
     // Shared work may return the first tier. Discover the other stored tier
     // without preparing a scene that nobody requested.
-    if (meta.edge !== edge) meta = await prepared(path, edge, signal, priority, path+"|"+edge, trace, options);
+    if (meta.edge !== edge) meta = await prepared(path, edge, signal, priority, path+"|"+edge, trace, options, refusedSource);
     if (generation!==(generations.get(path)||0) || signal?.aborted) throw new DOMException("Invalidated", "AbortError");
     return {...meta, draw_priority:priority, trace, log_view:trace?.view || (edge <= 640 ? "grid,filmstrip" : "single,fullscreen,compare")};
   }
@@ -237,7 +285,8 @@ window.HDRLibraryScenes = (() => {
         HDRLibraryGpuRaw.releaseSource?.(path);
       }
     }
-    if (cpuRoute !== "xtrans" && !rejectedPixels && !explicitDevelop && (importance() >= 50 || (gpuOnly && importance() > 0))) return null;
+    // Admission-capacity fallback already filtered current demand per tier.
+    if (cpuRoute !== gpuTooLarge && cpuRoute !== "xtrans" && !rejectedPixels && !explicitDevelop && (importance() >= 50 || (gpuOnly && importance() > 0))) return null;
     const cpu=async (token,owned)=>{for (;;) {
       const response = await fetch("/api/library/live-scene", {method:"POST",priority:"low",signal:owned,
         headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge,gpu:false,gpu_invalid_pixels:rejectedPixels,priority:importance(),grant:token})});

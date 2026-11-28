@@ -5,7 +5,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const gate=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {resolve,promise};};
 function setup(plans,develop,cores=4){
  let time=0;const requests=[],events=[];
- const context={navigator:{hardwareConcurrency:cores},window:{HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},HDRLibrarySceneScheduler:scheduler,AbortController,DOMException,requestAnimationFrame:callback=>setImmediate(callback),setTimeout,clearTimeout,setInterval,clearInterval,
+ const context={navigator:{hardwareConcurrency:cores},window:{HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},HDRLibrarySceneScheduler:scheduler,AbortController,AbortSignal,DOMException,requestAnimationFrame:callback=>setImmediate(callback),setTimeout,clearTimeout,setInterval,clearInterval,
   performance:{now:()=>time},console,crypto:require('node:crypto').webcrypto,
   HDRLibraryGrants:{acquire:async()=>({id:"test"}),run:async(p,k,s,task)=>task("test",s),promote:()=>{},release:()=>{}},
   HDRLibraryGpuRaw:{enabled:()=>true,liveScene:develop},
@@ -106,6 +106,153 @@ test('GPU memory shortage never requests CPU development',async()=>{
  const {scenes,events}=setup({photo:{bytes:96e6}},async()=>{throw Error('Source transfer exceeds available GPU memory');});
  await assert.rejects(scenes.load('photo',640),/Source transfer exceeds available GPU memory/);
  assert.deepEqual(events.filter(event=>event.stage==="picture_source_gpu_fallback"),[]);
+});
+
+function capacitySetup({cpuAdmission}={}) {
+ const refusal=gate(),asks=[],runs=[],cpu=[],path='repaired.arw';let preflights=0;
+ const result=setup({[path]:{bytes:96e6,source_identity:'repaired-recipe',gpu_meta:{repairs:7}}},()=>assert.fail('A capacity refusal must not start GPU development'));
+ const {context}=result;
+ context.HDRLibraryGpuRaw.preflight=async meta=>{assert.equal(meta.repairs,7);preflights++;return {bytes:2_109_988_864,unified:true};};
+ context.HDRLibraryGrants.acquire=async(path,kind,signal,priority,edge,bytes,unified)=>{
+  asks.push({kind,priority,edge,bytes,unified});
+  if(kind==='source'){
+   await refusal.promise;
+   throw Object.assign(Error('Exceeds the configured GPU budget'),{gpuTooLarge:true});
+  }
+  await cpuAdmission?.(signal);
+  return {id:'cpu-'+asks.length};
+ };
+ context.HDRLibraryGrants.run=async(path,kind,signal,task,_priority,initial,options)=>{
+  runs.push({kind,grant:initial.id,options});return task(initial.id,signal);
+ };
+ const fetch=context.fetch;
+ context.fetch=async(url,options)=>{
+  if(url!=='/api/library/live-scene')return fetch(url,options);
+  const body=JSON.parse(options.body);cpu.push(body);
+  return {ok:true,json:async()=>({edge:body.edge,key:'repaired-'+body.edge,route:'cpu'})};
+ };
+ return {...result,refusal,asks,runs,cpu,path,preflights:()=>preflights};
+}
+
+test('confirmed GPU capacity selects a fresh CPU grant before occupying a lane',async()=>{
+ const admission=gate();
+ const {scenes,refusal,asks,runs,cpu,path,events,preflights}=capacitySetup({cpuAdmission:()=>admission.promise});
+ scenes.viewport([path],[]);
+ const pending=scenes.load(path,640,undefined,10,null,{viewportDemand:true});
+ await tick();assert.deepEqual(asks,[{kind:'source',priority:10,edge:640,bytes:2_109_988_864,unified:true}]);
+ refusal.resolve();await tick();
+ assert.deepEqual(asks[1],{kind:'cpu',priority:10,edge:640,bytes:0,unified:false});
+ assert.equal(scenes.snapshot().sources.active,0);assert.deepEqual(cpu,[]);
+ admission.resolve();assert.equal((await pending).key,'repaired-640');
+ assert.deepEqual(cpu,[{path,edge:640,gpu:false,gpu_invalid_pixels:false,priority:10,grant:'cpu-2'}]);
+ assert.deepEqual(runs.map(run=>[run.kind,run.grant]),[['cpu','cpu-2']]);
+ assert.equal(preflights(),1);
+ assert.equal(events.filter(e=>e.stage==='picture_source_cpu_selected'&&e.reason==='gpu-too-large').length,1);
+});
+
+test('confirmed GPU capacity yields to speculative demand and honors explicit offscreen development',async()=>{
+ for(const [priority,options,expected] of [[5,{gpuOnly:true},false],[80,{},false],[99,{develop:true},true]]){
+  const {scenes,refusal,asks,cpu,path}=capacitySetup();
+  const pending=scenes.load(path,2560,undefined,priority,null,options);
+  await tick();refusal.resolve();
+  const result=await pending;
+  assert.deepEqual(asks.map(ask=>ask.kind),expected?['source','cpu']:['source']);
+  assert.equal(result?.key,expected?'repaired-2560':undefined);
+  assert.equal(cpu.length,Number(expected));
+  assert.equal(scenes.snapshot().sources.failures.length,0);
+ }
+});
+
+test('shared capacity refusal follows new demand per tier without re-asking GPU',async()=>{
+ const {scenes,refusal,asks,cpu,path}=capacitySetup();
+ const speculative=scenes.load(path,640,undefined,5,null,{gpuOnly:true});
+ await tick();
+ const selected=scenes.load(path,2560,undefined,0);
+ await tick();refusal.resolve();
+ assert.equal((await selected).key,'repaired-2560');assert.equal(await speculative,null);
+ assert.deepEqual(asks.map(({kind,edge,priority})=>[kind,edge,priority]),[['source',640,5],['cpu',2560,0]]);
+ assert.deepEqual(cpu.map(call=>call.edge),[2560]);
+});
+
+test('capacity refusal respects promotion and shares fresh CPU admission for both requested tiers',async()=>{
+ const {scenes,refusal,asks,cpu,path}=capacitySetup();
+ const thumbnail=scenes.load(path,640,undefined,5,null,{gpuOnly:true});
+ await tick();
+ scenes.promote(path,0);
+ const screen=scenes.load(path,2560,undefined,0);
+ await tick();refusal.resolve();
+ assert.deepEqual((await Promise.all([thumbnail,screen])).map(result=>result.key),['repaired-640','repaired-2560']);
+ assert.deepEqual(asks.map(({kind,priority})=>[kind,priority]),[['source',5],['cpu',0]]);
+ assert.deepEqual(cpu.map(({edge,grant})=>[edge,grant]),[[640,'cpu-2'],[2560,'cpu-2']]);
+});
+
+test('capacity fallback stays on CPU if it loses its development lane',async()=>{
+ const {context,scenes,refusal,asks,cpu,path,preflights}=capacitySetup();
+ const run=context.HDRLibraryGrants.run;let preempt=true;
+ context.HDRLibraryGrants.run=async(...args)=>{
+  if(preempt){
+   preempt=false;const controller=new AbortController();controller.abort();
+   await assert.rejects(args[3](args[5].id,controller.signal),{name:'AbortError'});
+   throw Object.assign(new DOMException('Preempted','AbortError'),{laneRequeue:true});
+  }
+  return run(...args);
+ };
+ const pending=scenes.load(path,640);await tick();refusal.resolve();
+ assert.equal((await pending).key,'repaired-640');
+ assert.deepEqual(asks.map(ask=>ask.kind),['source','cpu','cpu']);assert.equal(preflights(),1);
+ assert.deepEqual(cpu.map(call=>call.grant),['cpu-3']);
+});
+
+test('the existing transient CPU retry does not ask the GPU again for the refused source',async()=>{
+ const {context,scenes,refusal,asks,cpu,path,preflights}=capacitySetup();
+ const fetch=context.fetch;let first=true;
+ context.fetch=async(url,options)=>{
+  if(url==='/api/library/live-scene'&&first){first=false;throw Error('Temporary network failure');}
+  return fetch(url,options);
+ };
+ const pending=scenes.load(path,640);await tick();refusal.resolve();
+ assert.equal((await pending).key,'repaired-640');
+ assert.deepEqual(asks.map(ask=>ask.kind),['source','cpu','cpu']);assert.equal(preflights(),1);
+ assert.deepEqual(cpu.map(call=>call.grant),['cpu-3']);
+});
+
+test('losing the visible requester withdraws a pending CPU grant shared with speculative demand',async()=>{
+ let cpuSignal;
+ const {scenes,refusal,asks,cpu,path}=capacitySetup({cpuAdmission:signal=>{
+  cpuSignal=signal;
+  return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true}));
+ }});
+ const background=scenes.load(path,640,undefined,50);
+ await tick();
+ const controller=new AbortController(), visible=scenes.load(path,2560,controller.signal,0);
+ const stopped=assert.rejects(visible,{name:'AbortError'});
+ await tick();refusal.resolve();await tick();assert.equal(cpuSignal.aborted,false);
+ controller.abort();await stopped;
+ assert.equal(await background,null);assert.equal(cpuSignal.aborted,true);
+ assert.deepEqual(asks.map(ask=>ask.kind),['source','cpu']);assert.deepEqual(cpu,[]);
+});
+
+test('cancelling the source ask before its capacity refusal never requests CPU memory',async()=>{
+ const {scenes,refusal,asks,cpu,path}=capacitySetup();
+ const controller=new AbortController(),pending=scenes.load(path,640,controller.signal);
+ const stopped=assert.rejects(pending,{name:'AbortError'});
+ await tick();controller.abort();await stopped;
+ refusal.resolve();await tick();
+ assert.deepEqual(asks.map(ask=>ask.kind),['source']);assert.deepEqual(cpu,[]);
+ assert.equal(scenes.snapshot().sources.waiting,0);
+});
+
+test('temporary GPU admission keeps waiting without choosing CPU',async()=>{
+ const held=gate();let sources=0,cpu=0;
+ const {context,scenes}=setup({photo:{bytes:96e6}},async(_path,edge)=>({edge,key:'gpu'}));
+ context.HDRLibraryGpuRaw.preflight=async()=>({bytes:300_000_000,unified:true});
+ context.HDRLibraryGrants.acquire=async(_path,kind)=>{
+  if(kind==='cpu')cpu++;else sources++;
+  await held.promise;return {id:'gpu'};
+ };
+ const pending=scenes.load('photo',640);await tick();
+ assert.equal(sources,1);assert.equal(cpu,0);assert.equal(scenes.snapshot().sources.active,0);
+ held.resolve();assert.equal((await pending).key,'gpu');assert.equal(cpu,0);
 });
 
 test('departed tile cancels its source job and invalidation rejects a fresh request',async()=>{

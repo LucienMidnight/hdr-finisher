@@ -103,6 +103,7 @@ class Scheduler:
         self.overrun = None
         self.overrun_counts = {}
         self.gpu_budget = 0
+        self.gpu_budget_known = False
         self.gpu_external = 0
         self.gpu_paused = False
         self.gpu_draw_room = 0
@@ -182,9 +183,10 @@ class Scheduler:
                     log("library_estimate_proposal", file_type=kind, overrun_count=count,
                         action="Steve to review estimate; approved rate unchanged", **fields)
 
-    def update_gpu(self, budget, external=0, paused=False):
+    def update_gpu(self, budget, external=0, paused=False, *, budget_known=False):
         with self.lock:
             self.gpu_budget, self.gpu_external, self.gpu_paused = max(0, int(budget)), max(0, int(external)), bool(paused)
+            self.gpu_budget_known = bool(budget_known and self.gpu_budget > 0)
             self._pump()
 
     def preempt_gpu(self):
@@ -312,7 +314,7 @@ class Scheduler:
             # The waiting reason may stay identical across a visibility change.
             # Still publish the new class to the window's existing channel.
             for job in changed:
-                if job.notify:
+                if job.id in self.jobs and job.notify:
                     job.notify(self._message(job, "granted" if job.granted is not None else "waiting"))
 
     def valid(self, id, path, kind=None):
@@ -456,6 +458,24 @@ class Scheduler:
         if job.notify:
             job.notify(dict(self._message(job, "needs-memory"), reason=job.reason))
 
+    def _refuse_oversize_gpu_sources(self):
+        # Test the empty configured GPU, not the memory currently available.
+        # Drop impossible requests before they can trigger RAM gates or claim
+        # the oldest waiting turn. A fresh CPU request has its own estimate.
+        for job in list(self.jobs.values()):
+            if (job.cls == "Grade" or job.granted is not None or job.blocked or job.kind != "source"
+                    or not job.gpu_bytes or job.gpu_bytes + self.gpu_draw_room <= self.gpu_budget):
+                continue
+            if self.reclamation and self.reclamation["id"] == job.id:
+                self.reclamation = None
+            job.reason = job.outcome = "gpu-too-large"
+            self.jobs.pop(job.id)
+            self._log(job, "completed", outcome="gpu_too_large", gpu_budget_bytes=self.gpu_budget,
+                      gpu_draw_room_bytes=self.gpu_draw_room)
+            job.ready.set()
+            if job.notify:
+                job.notify(self._message(job, "gpu-too-large"))
+
     def _pump(self):
         opening = any(j.kind == "grade-import" for j in self.jobs.values())
         if opening != self.opening:
@@ -471,6 +491,8 @@ class Scheduler:
                     if job.notify: job.notify(dict(type="gpu-preempt", id=job.id))
         else:
             self._start_saves()
+            if self.gpu_budget_known:
+                self._refuse_oversize_gpu_sources()
         running = [j for j in self.jobs.values() if j.granted is not None]
         room = self.ceiling-STARTING-self.caches-self.grade_bytes
         total_without_grade = None if self.total is None else max(0, self.total-self.grade_bytes)

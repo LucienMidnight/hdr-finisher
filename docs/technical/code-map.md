@@ -673,6 +673,13 @@ grants. `library_index.py` releases startup grants at safe points and on close.
 `library-grants.js` sends document/native visibility over the existing channel; `desktop/main.js` includes native visibility in the existing window-state event. Header-only JPEG
 XL refusal lives in `library_rgb.py`. Header-confirmed X-Trans RAF CPU routing lives in `library_gpu_raw.py`, `library_api.py`, `library_live.py` and `library-scenes.js`; its measured exception is in `library_estimates.py`.
 
+`gpu_delivery.py` distinguishes a reported configured GPU budget from the
+startup placeholder. `library_scheduler.py` refuses a waiting Library GPU
+source only if its request plus draw reserve cannot fit that confirmed budget
+with nothing else running. `library-grants.js` retires the typed refusal, and
+`library-scenes.js` requests ordinary CPU admission for eligible demand before
+taking a development place. That route stays CPU across lane requeues.
+
 | Library diagnostics | Files |
 | --- | --- |
 | Library quick check | `codebase/tools/quick-library-check.cjs`: plain Electron child, isolated profile, deadline and external memory census; `--virtual-copy` measures confirmation to selected/pictured RAW copy with sidecar restoration; `desktop/quick-library-test.cjs`: explicit-switch-only startup and file result; `tools/quick-library-scenario.js`: in-page inputs, presentation timing, grid progress and responsiveness probes; `tools/library-quick-metrics.cjs`: page-clock picture totals; `desktop/library-wait-check.cjs`: opt-in `--batch5c` screen-pixel sampling, Compare, rapid Fit arrows and detail-refusal acceptance; `--grade-native-memory --retention` adds paired Grade opening and native-owner/idle telemetry (refused native admission is not a qualified pair) |

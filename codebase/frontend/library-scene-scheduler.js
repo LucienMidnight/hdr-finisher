@@ -7,13 +7,24 @@
     const score=job=>job.cost-Math.min(5,(now()-job.created)/1000);
     const order=(a,b)=>a.priority-b.priority||(!fifo && score(a)-score(b))||a.sequence-b.sequence;
     let ranking=null;
-    const demand=job=>{job.priority=Math.min(80,...[...job.users].map(user=>user.priority<=5||!user.viewport?user.priority:ranking?ranking(job.path):user.priority));};
+    const demand=job=>{
+      job.priority=80;
+      for(const user of job.users){
+        user.effectivePriority=user.priority<=5||!user.viewport||!ranking?user.priority:ranking(job.path);
+        job.priority=Math.min(job.priority,user.effectivePriority);
+      }
+      job.onDemand?.();
+    };
     let borrowPending=false,retry=null;
     function pump(borrow=false){
       if(admit)for(const job of waiting){
         if(job.admitted||job.admitting||job.controller.signal.aborted)continue;
         job.admitting=true;
         Promise.resolve().then(()=>admit(job)).then(granted=>{
+          if(granted===null){ // The route yielded without needing a lane.
+            const at=waiting.indexOf(job);if(at>=0)waiting.splice(at,1);
+            settle(job,null,null);return;
+          }
           job.admitted=granted;
           if(!granted&&!job.controller.signal.aborted&&!job.resourceWaiting){job.resourceWaiting=true;onChange(job,"waiting");}
         },error=>{const at=waiting.indexOf(job);if(at>=0)waiting.splice(at,1);settle(job,error);})
@@ -53,10 +64,10 @@
       if(error&&error.name!=="AbortError"&&!error.needsMemory&&!job.controller.signal.aborted){failures.push({path:job.path,reason:error.message});if(failures.length>8)failures.shift();}
       onChange(job,job.controller.signal.aborted ? "cancelled" : error?.name==="AbortError" ? /chang|invalidat/i.test(error.message)?"changed":"cancelled" : error?.needsMemory ? "needs-memory" : error ? "failed" : "completed",error);
       if(jobs.get(job.key)===job)jobs.delete(job.key);
-      for(const user of job.users){user.signal?.removeEventListener("abort",user.stop);error?user.reject(error):user.resolve(value);}
+      for(const user of job.users){user.signal?.removeEventListener("abort",user.stop);error?user.reject(error):user.resolve(job.valueFor ? job.valueFor(value,user) : value);}
       job.users.clear();
     }
-    function submit(key,task,signal,priority=10,{heavy=false,cost=0,path=key,stage="Preparing photo",edge,log_view,log_step,viewport=true,retainDetached=false,gpuMeta=null,cpuRoute=null,background=false}={}){
+    function submit(key,task,signal,priority=10,{heavy=false,cost=0,path=key,stage="Preparing photo",edge,log_view,log_step,viewport=true,retainDetached=false,gpuMeta=null,cpuRoute=null,background=false,gpuOnly=false,explicitDevelop=false}={}){
       if(signal?.aborted)return Promise.reject(cancelled());
       let job=jobs.get(key);
       if (job?.controller.signal.aborted) { jobs.delete(key); job = null; }
@@ -64,7 +75,7 @@
       // Work someone asked for is never background, even if idle work started it.
       else if(job.background&&!background){job.background=false;onChange(job,job.running?"running":"waiting");}
       const result=new Promise((resolve,reject)=>{
-        const user={signal,resolve,reject,priority,viewport};
+        const user={signal,resolve,reject,priority,viewport,edge,gpuOnly,explicitDevelop};
         if(retainDetached)job.retainDetached=true;
         if(edge!==undefined){if(!job.edges)job.edges=new Set();job.edges.add(edge);job.onTier?.(edge);}
         user.stop=()=>{const retained=typeof keepRunning==="function"?keepRunning(job):keepRunning;job.users.delete(user);reject(cancelled());demand(job);if(!job.users.size&&!(retained&&job.running)){job.controller.abort();if(!job.running){const index=waiting.indexOf(job);if(index>=0)waiting.splice(index,1);}onChange(job,job.running?"stopping":"cancelled");if(jobs.get(key)===job)jobs.delete(key);}};
