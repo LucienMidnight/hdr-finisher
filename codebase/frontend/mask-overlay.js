@@ -638,16 +638,12 @@ function drawBrushExpressionOutputSpace(context, expression, x, y, options, mapp
   if (leaf?.type !== "brush") return;
   const gesture = state.localPointerGesture;
   const activeStroke = gesture?.type === "brush" && gesture.leaf === leaf ? gesture.stroke : null;
-  const transformedLeaf = {
-    ...leaf,
-    strokes: (leaf.strokes || []).map((stroke) => mapper.stroke(stroke)),
-  };
-  const outputOptions = {
-    ...options,
-    spatialSignature: `${options.spatialSignature}:${mapper.signature}`,
-  };
   if (state.localShowMask && !options.authoritative) {
-    drawBrushMaskOverlay(context, transformedLeaf, null, x, y, expression.inverted, outputOptions);
+    drawBrushMaskOverlay(context, leaf, null, x, y, expression.inverted, {
+      ...options,
+      spatialSignature: `${options.spatialSignature}:${mapper.signature}`,
+      mapStroke: mapper.stroke,
+    });
   }
   if (!options.suppressGizmo && state.localShowMask && activeStroke) {
     drawActiveBrushStrokeOverlay(context, activeStroke, x, y, mapper, options.overlayColor);
@@ -685,13 +681,14 @@ function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = fals
       canvas.height = height;
       const canvasContext = canvas.getContext("2d");
       let eraseAttenuation = null;
-      for (const stroke of strokes) {
+      for (const sourceStroke of strokes) {
+        const stroke = options.mapStroke ? options.mapStroke(sourceStroke) : sourceStroke;
         if (stroke.erase) {
-          if (!eraseAttenuation) eraseAttenuation = opaqueBrushMaskCanvas(width, height);
-          drawBrushMaskStroke(eraseAttenuation.getContext("2d"), stroke, width, height);
+          if (!eraseAttenuation) eraseAttenuation = opaqueBrushMaskContext(width, height);
+          drawBrushMaskStroke(eraseAttenuation, stroke, width, height);
         } else {
           drawBrushMaskStroke(canvasContext, stroke, width, height);
-          if (eraseAttenuation) drawBrushMaskStroke(eraseAttenuation.getContext("2d"), stroke, width, height);
+          if (eraseAttenuation) drawBrushMaskStroke(eraseAttenuation, stroke, width, height);
         }
       }
       // Cache the fully processed fallback too, since several overlay renders
@@ -1061,14 +1058,14 @@ function postProcessBrushMaskPreview(source, leaf, width, height) {
   return softened;
 }
 
-function opaqueBrushMaskCanvas(width, height) {
+function opaqueBrushMaskContext(width, height) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d");
   context.fillStyle = "#000";
   context.fillRect(0, 0, width, height);
-  return canvas;
+  return context;
 }
 
 function postProcessBrushMaskPreviewWithErase(paintedSource, eraseAttenuation, leaf, width, height, inverted = false) {
@@ -1079,7 +1076,7 @@ function postProcessBrushMaskPreviewWithErase(paintedSource, eraseAttenuation, l
   const context = canvas.getContext("2d");
   context.drawImage(processed, 0, 0, width, height);
   const output = context.getImageData(0, 0, width, height);
-  const attenuation = eraseAttenuation?.getContext("2d").getImageData(0, 0, width, height).data || null;
+  const attenuation = eraseAttenuation?.getImageData(0, 0, width, height).data || null;
   for (let index = 3; index < output.data.length; index += 4) {
     const alpha = inverted ? 255 - output.data[index] : output.data[index];
     output.data[index] = attenuation

@@ -3,6 +3,56 @@ const { test } = require('node:test');
 const vm = require('node:vm');
 const { frontendSource } = require('./frontend-source.js');
 
+test('projective brush fallback replays paint and erase in order and reuses the finished mask', () => {
+  const canvases = [];
+  const draws = [];
+  const context = vm.createContext({
+    state: { localShowMask: false },
+    document: { createElement: () => {
+      const canvas = { alpha: 0 };
+      const ctx = {
+        canvas,
+        fillRect() { canvas.alpha = 255; },
+        drawImage(source) { canvas.alpha = source.alpha; },
+        getImageData() { return { data: Uint8ClampedArray.of(0, 0, 0, canvas.alpha) }; },
+        putImageData({ data }) { canvas.alpha = data[3]; },
+      };
+      canvas.getContext = () => ctx;
+      canvases.push(canvas);
+      return canvas;
+    } },
+    settledProxyLongEdge: () => 256,
+    localBrushMaskCanvasCache: new Map(), LOCAL_BRUSH_MASK_CACHE_LIMIT: 4,
+    clamp: (n, lo, hi) => Math.min(hi, Math.max(lo, n)),
+  });
+  vm.runInContext(frontendSource('mask-overlay.js'), context);
+  context.postProcessBrushMaskPreview = source => source;
+  context.tintedBrushMaskCanvas = source => source;
+  context.drawBrushMaskStroke = (ctx, { alpha, erase }) => {
+    ctx.canvas.alpha = erase ? 0 : alpha;
+    draws.push([canvases.indexOf(ctx.canvas), alpha, Boolean(erase)]);
+  };
+  const painted = [];
+  const surface = { save() {}, restore() {}, drawImage(canvas) { painted.push(canvas.alpha); } };
+  const strokes = [{ alpha: 255 }, { alpha: 0, erase: true }, { alpha: 128 }];
+  const expression = { operator: 'leaf', leaf: { type: 'brush', strokes } };
+  const mapped = [];
+  const mapper = { signature: 'perspective', stroke: stroke => { mapped.push(stroke); return stroke; } };
+  const options = { localId: 'local', spatialSignature: 'mask', suppressGizmo: true };
+  const draw = extra => context.drawBrushExpressionOutputSpace(surface, expression, x => x, y => y, { ...options, ...extra }, mapper);
+
+  draw();
+  context.state.localShowMask = true;
+  draw({ authoritative: { canvas: { alpha: 80 } } });
+  assert.deepEqual(mapped, []);
+  assert.deepEqual(painted, []);
+  draw();
+  draw();
+  assert.deepEqual(mapped, strokes);
+  assert.deepEqual(draws, [[0, 255, false], [1, 0, true], [0, 128, false], [1, 128, false]]);
+  assert.deepEqual(painted, [64, 64]);
+});
+
 function setup() {
   let local = { id: 'local', mask: { id: 'mask', leaf: { type: 'hue_range', hue_center: null } } };
   const calls = [];
