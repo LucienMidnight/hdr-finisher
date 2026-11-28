@@ -453,9 +453,9 @@ function updateControlReadouts() {
     const value = getValueByPath(state.adjustments, path);
     if (value === undefined) return;
     const text = formatControlValue(path, value);
-    output.textContent = text;
+    if (output.textContent !== text) output.textContent = text;
     const control = document.querySelector(`[data-path="${path}"]`);
-    if (control) control.setAttribute("aria-valuetext", text);
+    if (control && control.getAttribute("aria-valuetext") !== text) control.setAttribute("aria-valuetext", text);
   });
   syncTintPurityVisuals();
 }

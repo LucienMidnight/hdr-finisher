@@ -38,3 +38,29 @@ test('a readout populated after binding accepts a typed percentage without clamp
  output.textContent='30';listeners.keydown({key:'Enter',preventDefault(){}});
  assert.equal(slider.value,'0.3');
 });
+
+test('Grade readout sync updates only changed labels, including replacement controls', () => {
+ const c=context(), writes=[];
+ const field=(key,value)=>{
+  let text=value;
+  return {dataset:{valuePath:key},get textContent(){return text;},set textContent(next){text=next;writes.push([key,next]);}};
+ };
+ const control=(key,value)=>{
+  let aria=value;
+  return {getAttribute:()=>aria,setAttribute:(_name,next)=>{aria=next;writes.push([key,next]);}};
+ };
+ const exposure=field('exposure','0'), contrast=field('contrast','10'), typed=field('typed','15');
+ typed.dataset.editing='true';
+ const controls={exposure:control('exposure aria','0'),contrast:control('contrast aria',null),typed:control('typed aria','20')};
+ Object.assign(c,{els:{valueOutputs:[exposure,contrast,typed]},state:{adjustments:{exposure:1,contrast:10,typed:20}},
+  getValueByPath:(adjustments,key)=>adjustments[key], formatControlValue:(_key,value)=>String(value),
+  syncTintPurityVisuals(){},
+  document:{querySelector:selector=>controls[selector.match(/"([^"]+)"/)[1]]},
+ });
+ c.updateControlReadouts();
+ assert.deepEqual(writes,[['exposure','1'],['exposure aria','1'],['contrast aria','10']]);
+ assert.equal(typed.textContent,'15');
+ writes.length=0;
+ c.updateControlReadouts();
+ assert.deepEqual(writes,[]);
+});
