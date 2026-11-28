@@ -8,6 +8,28 @@ const context = vm.createContext({HDRFilmCharacter:C});
 vm.runInContext(source.slice(source.indexOf('const defaultFilmLook ='), source.indexOf('const defaultColorGrading ='))+'; globalThis.result={defaultFilmLook,FILM_LOOK_PRESETS};',context);
 const {defaultFilmLook,FILM_LOOK_PRESETS:looks}=context.result;
 const plain = x => JSON.parse(JSON.stringify(x));
+
+test('Film stock fact chips remain in place until the displayed stock facts change', () => {
+ const {frontendSource} = require('./frontend-source.js');
+ const panel = {children: [], replaceChildren(...children) { this.children = children; }};
+ const film = defaultFilmLook();
+ const c = vm.createContext({HDRFilmCharacter: C, state: {currentView: 'hdr', adjustments: {hdr: {film_look: film}}},
+  document: {querySelector: () => null, querySelectorAll: () => [],
+   getElementById: id => id === 'film-stock-facts' ? panel : null, createElement: () => ({})}});
+ vm.runInContext(frontendSource('adjustment-controls.js'), c);
+ c.renderFilmPanel();
+ const neutral = panel.children;
+ assert.deepEqual(neutral.map(chip => chip.textContent), ['Straight response', 'No grain or halation of its own']);
+ C.set(film, 'look_strength', 0.55);
+ c.renderFilmPanel();
+ assert.equal(panel.children, neutral);
+ C.select(film, 'kodak_portra_400');
+ c.renderFilmPanel();
+ assert.notEqual(panel.children, neutral);
+ assert.equal(panel.children.length, 4);
+ assert.equal(panel.children[0].textContent, 'Still film');
+});
+
 test('all approved Looks replace previous choices and survive sparse save/reopen and stock changes',()=>{
  assert.equal(looks.length,11);
  for(const look of looks) {

@@ -565,7 +565,9 @@ function renderFilmPanel() {
       grain+estimate(character.provenance?.grain_amount?.status),
       halation+estimate(character.halation?.status),
       slide ? "Scanned directly, no print" : `Prints on ${paperName(character.default_paper)}`];
-    facts.replaceChildren(...chips.map(copy => { const chip = document.createElement("span"); chip.textContent = copy; return chip; }));
+    if (facts.children.length !== chips.length || chips.some((copy, index) => facts.children[index].textContent !== copy)) {
+      facts.replaceChildren(...chips.map(copy => { const chip = document.createElement("span"); chip.textContent = copy; return chip; }));
+    }
   }
   const formatKeys = ["grain_film_format", "grain_capture_geometry", "grain_custom_width_mm", "grain_custom_height_mm", "stock_exposure", "lens_filter", "lens_strength", "lens_size"];
   const printKeys = [...FILM_PRINT_KEYS];
