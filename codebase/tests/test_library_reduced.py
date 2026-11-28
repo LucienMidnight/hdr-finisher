@@ -61,6 +61,28 @@ def test_png_matches_existing_pillow_rgb_boundary_for_small_files(tmp_path,mode)
     np.testing.assert_array_equal(out,np.asarray(Image.open(p).convert("RGB")))
 
 
+def test_library_png_normalization_preserves_both_source_renditions(tmp_path, monkeypatch):
+    from hdr_finisher import loader
+
+    path = tmp_path / 'ramp.png'
+    ramp = np.arange(256, dtype=np.uint8)
+    bitmap = np.broadcast_to(np.stack((ramp, ramp[::-1], np.roll(ramp, 35)), axis=-1), (8, 256, 3))
+    Image.fromarray(bitmap).save(path)
+    samples, _ = png(path)
+    old_normalized = samples.astype(np.float32) * np.float32(1 / 255)
+    before_hdr, _, _, _, before_sdr = loader.load_image(path)
+    normalize = loader.normalize_to_acescg_bounded
+
+    def assert_normalized(image, *args, **kwargs):
+        np.testing.assert_array_equal(image, old_normalized)
+        return normalize(image, *args, **kwargs)
+
+    monkeypatch.setattr(loader, 'normalize_to_acescg_bounded', assert_normalized)
+    after_hdr, _, _, _, after_sdr = loader.load_image(path, library_edge=5120)
+    np.testing.assert_array_equal(after_hdr, before_hdr)
+    np.testing.assert_array_equal(after_sdr, before_sdr)
+
+
 def test_pillow_global_guard_stays_unchanged(tmp_path):
     from hdr_finisher.library_reduced import jpeg_open
     before=Image.MAX_IMAGE_PIXELS

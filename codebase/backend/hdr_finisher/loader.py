@@ -108,7 +108,9 @@ def load_image(
             if library_edge is not None and suffix == ".png":
                 from .library_reduced import png
                 samples, metadata = png(path)
-                image = samples.astype(np.float32)*np.float32(1/255)
+                image = samples.astype(np.float32)
+                del samples
+                image *= np.float32(1.0 / 255.0)
             elif library_edge is not None and suffix in {".jpg", ".jpeg"}:
                 from .library_reduced import jpeg_open
                 image, metadata = _load_with_pillow(path, draft_edge=5120, image_factory=jpeg_open)
