@@ -1,3 +1,97 @@
+## November 29, 2026 — Mac fast Film Look (consistent Grain and eight-lobe Mist), whole slider wait
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794, GPU lock, nothing else running. Driver
+`tests/performance/grade-module-impact.js --module baseline,film`, five samples and two warmups.
+Before: sprint head `47d90f46`. After: branch `film-fast-look` at `e41e2038`; `33cbc94c` only changes
+the parity tests and adds a callback. Recipe: Portra 400, Black Pro-Mist 1/8, Halation, Grain.
+The table shows medians of `first_frame_ms` / `settle_ms`. IMG_7723.CR3 is 24 MP; DSC00636.ARW is 50 MP.
+
+| Action | Before | After | Conditions |
+| --- | --- | --- | --- |
+| Exposure drag with Film on, 24 MP Fit | 164 ms / 725 ms | 59 ms / 52 ms | Film off: 22 ms / 1 ms |
+| Exposure drag with Film on, 50 MP Fit | 141 ms / 714 ms | 55 ms / 22 ms | Film off: 22 ms / 3 ms |
+| Film own sliders, both photos at Fit | 65–98 ms / 528–563 ms | 45–61 ms / 15–21 ms | Print contrast, Look strength, Lens, Halation, Grain |
+| Denoise on with Film on, 24 MP Fit | 631 ms | 81–95 ms | |
+| Exposure drag with Film on, 50 MP at 100% | 1358 ms / 1903 ms | 555 ms / 909 ms | Film off: 435 ms / 105 ms |
+| Film own sliders, 50 MP at 100% | 930–1047 ms / 1641–1765 ms | 383–400 ms / 412–457 ms | |
+| Peak footprint during the Film run | Fit 1.6 GB, 100% 2.5 GB | Fit 1.6 GB, 100% 2.5 GB | No new caches |
+
+## November 28, 2026 — Fast Film Grain, isolated GPU work
+
+MacBook Neo, A18 Pro / 8 GB, 1408×794, shared GPU lock. The production Grain
+functions from `aee3d656` and `91a06728` ran as isolated HDR renders on the
+same tone-mapped RAW inputs (35 mm, Size 50, Amount 28, Chroma 40, Colour
+Negative). Five warmed, alternating GPU timestamp samples, with the
+corresponding no-Grain draw subtracted. Fit uses the full processing raster.
+100% uses the central 1024×1024 native-pixel tile, with each photo's full frame
+size and its real tile origin. This times Grain work, not the full action to
+visible picture. The later silver-shadow calibration does not change Colour
+Negative. Values are milliseconds, median (range).
+
+| Photo | Fit, old → new | 100% tile, old → new |
+| --- | --- | --- |
+| IMG_7723.CR3 (24 MP, Fit 1283×856) | 483.59 (481.49–494.86) → 6.68 (6.62–6.75) | 23.40 (23.33–23.40) → 2.10 (2.10–2.16) |
+| DSC00636.ARW (50 MP, Fit 1283×857) | 509.15 (489.23–514.52) → 6.68 (6.62–6.95) | 21.95 (21.89–22.02) → 2.10 (2.10–2.16) |
+
+Both Fit measurements are below the 25 ms Grain budget. Raw timestamps:
+`codebase/output/f1-grain/gpu.json`.
+
+## November 28, 2026 — Fast Film Grain, native CPU export
+
+MacBook Neo, A18 Pro / 8 GB, shared run lock. Native SDR PNG from already
+developed Canon and Sony RAWs with Portra 400 and Grain Amount 28, Size 50,
+Chroma 40, 35 mm, and no Mist. Two matched runs per field, alternating
+order. The candidate differs from base `aee3d656` only in Film Grain field
+(`d0f1e21c`). Decode is outside the export wait. The Grain stage includes
+the stock work that consumes its density. Values are seconds, median
+(range). The larger Canon candidate spread makes the precise gain there
+less certain, but the ranges do not overlap.
+
+| Photo | Entire export, old → new | Grain and stock stage, old → new |
+| --- | --- | --- |
+| IMG_7723.CR3, 24 MP | 45.97 (45.47–46.48) → 29.54 (25.77–33.31) | 42.59 (42.06–43.12) → 25.21 (22.48–27.94) |
+| DSC00636.ARW, 50 MP | 86.84 (86.52–87.16) → 53.51 (53.38–53.64) | 77.14 (76.71–77.56) → 43.76 (43.66–43.87) |
+
+Raw timings: `codebase/output/f1-grain/cpu-export.json`.
+
+## November 28, 2026 — Film Mist cache-miss benchmark (F2)
+
+MacBook Neo, Apple A18 Pro, 8 GB, 1408×794 at 2×, shared GPU lock.
+HDR Grade Exposure drags on real RAWs with Portra 400, Black Pro-Mist
+(strength 0.3, size 1, 35 mm), Halation and Scan enabled, Grain off to
+isolate Mist. Values are GPU milliseconds from the weight pass through the
+last blur pass, with one untraced warmup, three traced drags and cache hits
+excluded. At 100%, each sample sums the native viewport tiles' Mist time,
+excluding the separate reduced continuity picture. Values are medians and
+ranges, not the whole wait the user sees.
+
+| Black Pro-Mist cache miss | Old 27 lobes, `aee3d656` | Eight lobes with symmetric taps, `e8c183db` |
+| --- | ---: | ---: |
+| IMG_7723.CR3, 24 MP Fit | 105.15 (98.37–111.94) | 19.01 (18.81–27.20) |
+| DSC00636.ARW, 50 MP Fit | 85.92 (80.28–90.77) | 16.25 (16.12–24.77) |
+| IMG_7723.CR3, 100%, 24 native tiles | 266.90 (239.34–278.27) | 80.81 (74.91–87.36) |
+| DSC00636.ARW, 100%, 21 native tiles | 297.27 (267.78–310.18) | 82.51 (76.81–86.77) |
+
+Both Fit medians are below 25 ms. Each Canon drag's first miss was 25.95–27.20
+ms, while all 19 later Canon misses were 18.81–19.40 ms. The Sony's first misses
+were 23.46–24.77 ms. Before symmetric weight reuse, the eight-lobe Canon trial
+at `7e689ff3` was 24.77 ms median (23.53–32.77). The timing does not qualify
+the whole Film stack's first presentation or settle, which also includes Grain.
+
+On the same Neo, forced-CPU native SDR JPEG export (quality 90, decoded source,
+same Film recipe, Grain off). Three interleaved samples per version measured
+with the shared lock, changing only the Mist kernel from `aee3d656` to
+`7e689ff3`. Times in seconds are medians (ranges).
+
+| Photo | Whole export before → after | Mist stage before → after |
+| --- | ---: | ---: |
+| IMG_7723.CR3, 24 MP | 21.21 (20.93–27.14) → 19.69 (17.64–22.11) | 5.41 (5.01–7.48) → 4.96 (4.84–5.81) |
+| DSC00636.ARW, 50 MP | 39.94 (39.72–42.08) → 41.18 (39.70–41.54) | 10.64 (10.40–13.84) → 10.59 (10.23–11.07) |
+
+The 24 MP export median was 7.2% shorter and the 50 MP median was 3.1% longer.
+The ranges overlap at both sizes, so this does not establish a reliable CPU
+export speedup. Full-size CPU convolution retains the same bounded FFT blocks.
+
 ## November 28, 2026 — Mac Library viewport check after EXIF startup fix
 
 MacBook Neo, 1408×794, shared GPU lock, plain Electron, 90-second frozen

@@ -1056,17 +1056,15 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
   const LENS_FILTERS = ((typeof window !== "undefined" && window.HDRLensFilters)
     || (typeof module !== "undefined" && module.exports && require("./lens-filters.js")));
   const LENS_KERNEL_LIMIT = 256;
-  const LENS_KERNEL_TAPS = 2 * LENS_KERNEL_LIMIT + 1;
+  const LENS_KERNEL_TAPS = LENS_KERNEL_LIMIT + 1;
+  const LENS_LOBE_COUNT = LENS_FILTERS.components[1].length;
+  const LENS_TABLE_LENGTH = (LENS_FILTERS.components.length - 1) * LENS_LOBE_COUNT;
   // Each component's row ends with its extent and normalization sum.
-  const LENS_KERNEL_SIZE = Object.freeze([LENS_KERNEL_TAPS + 2, 27]);
+  const LENS_KERNEL_SIZE = Object.freeze([LENS_KERNEL_TAPS + 2, LENS_LOBE_COUNT]);
   const LENS_COMPONENTS_WGSL = LENS_FILTERS.components.slice(1).flat().map(([sigma,weights]) =>
     `vec4f(${[sigma,...weights].map(value=>Number(value).toPrecision(12)).join(",")})`).join(",\n");
 
-  const GRAIN_SAMPLE_COUNTS = Object.freeze({ draft: 1, settled: 16 });
-
   const SHADER_SOURCE = String.raw`
-    override grainSampleLimit: u32 = ${GRAIN_SAMPLE_COUNTS.settled}u;
-    override pruneGrain: bool = false;
     @group(0) @binding(0) var sourceTexture: texture_2d<f32>;
     @group(0) @binding(1) var<storage, read> p: array<f32>;
     @group(0) @binding(2) var<storage, read> curveLuts: array<f32>;
@@ -2390,23 +2388,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       }
       return result;
     }
-    // Film grain: the same field as backend film_grain.py, gathered per pixel
-    // where the CPU splats per grain. Grains are a Poisson process over a
-    // lattice of cells (a random count per cell, mean 6); each has its own
-    // position, radius and sensitivity, develops where the exposure passes
-    // that sensitivity, and the developed grains overlap as a union.
-    // How many grains a cell holds: the Poisson(6) cumulative probabilities
-    // its uniform draw exceeds, capped at 16 (film_grain.POISSON_CDF).
-    fn grainCount(draw: f32) -> u32 {
-      return select(0u, 1u, draw > 0.00247875229) + select(0u, 1u, draw > 0.017351266)
-        + select(0u, 1u, draw > 0.0619688034) + select(0u, 1u, draw > 0.151203886)
-        + select(0u, 1u, draw > 0.285056502) + select(0u, 1u, draw > 0.445679635)
-        + select(0u, 1u, draw > 0.606302798) + select(0u, 1u, draw > 0.743979752)
-        + select(0u, 1u, draw > 0.847237468) + select(0u, 1u, draw > 0.916076005)
-        + select(0u, 1u, draw > 0.957379103) + select(0u, 1u, draw > 0.979908049)
-        + select(0u, 1u, draw > 0.991172493) + select(0u, 1u, draw > 0.996371508)
-        + select(0u, 1u, draw > 0.998599648) + select(0u, 1u, draw > 0.999490917);
-    }
+    // Same seeded, box-filtered tent field as backend film_grain.py.
     fn grainMix(value: u32) -> u32 {
       var x = value;
       x = x ^ (x >> 16u);
@@ -2421,80 +2403,52 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       let seed = u32(p[${GPU_PARAMS.GRAIN_SEED_LOW}]) | (u32(p[${GPU_PARAMS.GRAIN_SEED_HIGH}]) << 16u);
       return grainMix(seed + salt * 0x9e3779b9u);
     }
-    fn grainCellHash(cell: vec2i, seeded: u32) -> u32 {
-      return grainMix(grainMix(seeded ^ bitcast<u32>(cell.x)) ^ bitcast<u32>(cell.y));
+    fn grainTentCdf(x: vec4f) -> vec4f {
+      let edge = 1.0 - min(abs(x), vec4f(1.0));
+      let area = 0.5 * edge * edge;
+      return select(1.0 - area, area, x < vec4f(0.0));
     }
-    fn grainUniform(hashed: u32, key: u32) -> f32 {
-      return f32(grainMix(hashed + key * 0x85ebca6bu) >> 8u) * (1.0 / 16777216.0);
+    fn grainMix4(value: vec4u) -> vec4u {
+      var x = value;
+      x = (x ^ (x >> vec4u(16u))) * 0x7feb352du;
+      x = (x ^ (x >> vec4u(15u))) * 0x846ca68bu;
+      return x ^ (x >> vec4u(16u));
     }
-    fn grainMottle(coordinate: vec2f, seeded: u32) -> f32 {
-      let cell = floor(coordinate);
-      let local = coordinate - cell;
-      let blend = local * local * (vec2f(3.0) - 2.0 * local);
-      let c = vec2i(cell);
-      let v00 = grainUniform(grainCellHash(c, seeded), 0u) * 2.0 - 1.0;
-      let v10 = grainUniform(grainCellHash(c + vec2i(1, 0), seeded), 0u) * 2.0 - 1.0;
-      let v01 = grainUniform(grainCellHash(c + vec2i(0, 1), seeded), 0u) * 2.0 - 1.0;
-      let v11 = grainUniform(grainCellHash(c + vec2i(1, 1), seeded), 0u) * 2.0 - 1.0;
-      let top = v00 + (v10 - v00) * blend.x;
-      let bottom = v01 + (v11 - v01) * blend.x;
-      return top + (bottom - top) * blend.y;
-    }
-    fn grainDevelop(signal: f32) -> f32 {
-      return 0.06 + 0.88 * clamp(signal, 0.0, 1.0);
-    }
-    // Mean and spread of coverage for a flat exposure, in closed form for a
-    // Poisson field of grains with this profile.
-    fn grainCoverageStats(develop: f32, opacity: f32, edge: f32) -> vec2f {
-      let run = 1.0 - edge;
-      let first = 6.2831853 * (edge * edge * 0.5 + run * (edge * 0.5 + 0.15 * run));
-      let second = 6.2831853 * (edge * edge * 0.5 + run * (edge * 13.0 / 35.0 + run * 3.0 / 35.0));
-      let density = 6.0 * 0.26333333;
-      let meanLoss = density * opacity * develop * first;
-      let squareLoss = density * (2.0 * opacity * develop * first - opacity * opacity * (develop - 0.04 / 6.0) * second);
-      let transmit = exp(-meanLoss);
-      return vec2f(1.0 - transmit, sqrt(max(exp(-squareLoss) - transmit * transmit, 0.0)));
-    }
-    fn grainLayerNoise(u: vec2f, signal: f32, salt: u32, opacity: f32, clumping: f32, edge: f32, midSpread: f32) -> f32 {
+    fn grainFootprint(frame: vec2f, pitch: f32, salt: u32) -> vec2f {
+      let centre = frame / pitch;
+      let halfBox = vec2f(0.5 / pitch);
+      let first = vec2i(floor(centre - halfBox));
+      let last = vec2i(ceil(centre + halfBox));
       let seeded = grainSeed(salt);
-      let mottle = grainMottle(u / 5.0, grainSeed(salt + 101u));
-      let develop = grainDevelop(signal + clumping * mottle);
-      let base = vec2i(floor(u));
-      var transmit = 1.0;
-      for (var dy = -1; dy <= 1; dy++) {
-        for (var dx = -1; dx <= 1; dx++) {
-          let cell = base + vec2i(dx, dy);
-          if (pruneGrain) {
-            // Every center is inside its cell, and its radius is at most 0.7.
-            // Leave a margin before rejecting a cell at the f32 boundary.
-            let boxDistance = max(max(vec2f(cell) - u, u - (vec2f(cell) + vec2f(1.0))), vec2f(0.0));
-            if (dot(boxDistance, boxDistance) > 0.491401) { continue; } // 0.701 squared
-          }
-          let hashed = grainCellHash(cell, seeded);
-          let count = grainCount(grainUniform(hashed, 999u));
-          for (var k = 0u; k < count; k++) {
-            let key = 8u * k;
-            let centre = vec2f(cell) + vec2f(grainUniform(hashed, key + 1u), grainUniform(hashed, key + 2u));
-            let radius = 0.3 + 0.4 * grainUniform(hashed, key + 3u);
-            if (pruneGrain) {
-              // A conservative rejection keeps the original radius test and
-              // float arithmetic for every grain that could contribute.
-              let delta = u - centre;
-              let bound = radius + 0.0001;
-              if (dot(delta, delta) > bound * bound) { continue; }
-            }
-            let rho = length(u - centre) / radius;
-            if (rho < 1.0) {
-              let t = clamp((rho - edge) / (1.0 - edge), 0.0, 1.0);
-              let profile = 1.0 - t * t * (3.0 - 2.0 * t);
-              let developed = clamp((develop - grainUniform(hashed, key + 4u)) / 0.04 + 0.5, 0.0, 1.0);
-              transmit *= 1.0 - opacity * developed * profile;
-            }
-          }
+      var field = vec2f(0.0);
+      for (var y = first.y; y <= last.y; y++) {
+        let rowKey = bitcast<u32>(y);
+        var row = vec2f(0.0);
+        for (var x = first.x; x <= last.x; x += 4) {
+          let nodes = vec4i(x) + vec4i(0, 1, 2, 3);
+          let delta = centre.x - vec4f(nodes);
+          let weight = (grainTentCdf(delta + halfBox.x) - grainTentCdf(delta - halfBox.x)) * pitch;
+          let hash = grainMix4(grainMix4(vec4u(seeded) ^ bitcast<vec4u>(nodes)) ^ vec4u(rowKey));
+          let value = vec4f(hash >> vec4u(8u)) * (1.0 / 8388608.0) - 1.0;
+          let square = value * value;
+          row += vec2f(dot(select(square, -square, value < vec4f(0.0)), weight),
+                       dot(square - 1.0 / 3.0, weight));
         }
+        let delta = vec4f(centre.y - f32(y));
+        let weight = (grainTentCdf(delta + halfBox.y) - grainTentCdf(delta - halfBox.y)) * pitch;
+        field += row * weight.x;
       }
-      let stats = grainCoverageStats(grainDevelop(signal), opacity, edge);
-      return ((1.0 - transmit) - stats.x) / sqrt(max(stats.y, 0.0001) * midSpread);
+      return field;
+    }
+    fn grainLayerNoise(frame: vec2f, pitch: f32, scale: f32, signal: f32, salt: u32, mono: bool) -> f32 {
+      let field = grainFootprint(frame, pitch, salt);
+      let inv = 1.0 - signal;
+      let skew = 1.35 * inv * inv - select(0.42, 0.95, mono) * signal;
+      let nativeGain = length(vec2f(1.0, 0.58 * scale / pitch));
+      let normal = 3.35 * nativeGain / sqrt(1.0 + (4.0 / 9.0) * skew * skew);
+      let develop = 0.06 + 0.88 * signal;
+      let contrast = sqrt(sqrt(develop / 0.5)) * (1.0 - select(0.40, 0.58, mono) * (develop - 0.5));
+      return (field.x + skew * field.y) * (normal * contrast);
     }
     fn filmModuleActive() -> bool {
       return p[${GPU_PARAMS.FILM_LOOK_ENABLED}] > 0.5 && p[${GPU_PARAMS.FILM_FINISH_STRENGTH}] > 0.0
@@ -2505,79 +2459,56 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
           || p[${GPU_PARAMS.FILM_RESOLUTION}] < 1.0
           || (p[${GPU_PARAMS.GRAIN_ENABLED}] > 0.5 && (p[${GPU_PARAMS.GRAIN_AMOUNT}] > 0.0 || p[${GPU_PARAMS.GRAIN_VIEW_MAP}] > 0.5)));
     }
-    fn filmGrainSample(rgb: vec3f, coordinate: vec2i, master: f32, offset: vec2f, minimumPitch: f32) -> vec3f {
-      if (p[${GPU_PARAMS.GRAIN_ENABLED}] < 0.5 || p[${GPU_PARAMS.GRAIN_AMOUNT}] <= 0.0) { return vec3f(0.0); }
-        let pixelsPerMm = filmPixelsPerMm(frameDimensions());
-        let physicalPitch = pixelsPerMm * (6.0 + 24.0 * p[${GPU_PARAMS.GRAIN_SIZE}]) / 1000.0;
-        let pitch = max(minimumPitch, physicalPitch);
-        let pixelCoverage = min(1.0, physicalPitch / minimumPitch);
-        let frame = vec2f(frameCoordinate(coordinate)) + offset;
-        let signal = clamp(filmSignalFromLuma(max(filmLuma(rgb), 0.0)), 0.0, 1.0);
-        // Color negative: three dye layers, blue coarsest, each developed by
-        // its own channel. Black & white: one layer of sharper, denser silver.
-        let blackAndWhite = p[${GPU_PARAMS.GRAIN_FILM_TYPE}] > 0.5;
-        let opacity = select(0.45, 0.55, blackAndWhite);
-        let clumping = select(0.12, 0.20, blackAndWhite);
-        let edge = select(0.25, 0.45, blackAndWhite) * (1.0 - p[${GPU_PARAMS.GRAIN_SOFTNESS}]);
-        let midSpread = grainCoverageStats(grainDevelop(0.5), opacity, edge).y;
-        // Both lanes develop the same grains (_grain_development_signals in
-        // adjustments.py): HDR in sRGB primaries, reference white scaled onto
-        // SDR's, encoded as SDR is, and fully developed by signal 0.45 before
-        // the lanes' tone curves part. Otherwise the gain map fills with grain.
-        let developLinear = select(rgb, acescgToSrgb(rgb) * 2.7367268, p[${GPU_PARAMS.HDR_LANE}] > 0.5);
-        let developLuma = clamp(srgbEncode(clamp(lumaSrgb(developLinear), 0.0, 1.0)) / 0.45, 0.0, 1.0);
-        var grain = vec3f(0.0);
-        if (blackAndWhite) {
-          grain = vec3f(grainLayerNoise(frame / pitch, developLuma, 239u, opacity, clumping, edge, midSpread));
-        } else {
-          let developRgb = clamp(developLinear, vec3f(0.0), vec3f(1.0));
-          let channelSignal = clamp(
-            vec3f(srgbEncode(developRgb.r), srgbEncode(developRgb.g), srgbEncode(developRgb.b)) / 0.45, vec3f(0.0), vec3f(1.0)
-          );
-          let layers = vec3f(
-            grainLayerNoise(frame / max(minimumPitch, physicalPitch * 0.9), channelSignal.r, 211u, opacity, clumping, edge, midSpread),
-            grainLayerNoise(frame / max(minimumPitch, physicalPitch), channelSignal.g, 223u, opacity, clumping, edge, midSpread),
-            grainLayerNoise(frame / max(minimumPitch, physicalPitch * 1.3), channelSignal.b, 227u, opacity, clumping, edge, midSpread)
-          );
-          let weights = vec3f(0.2126, 0.7152, 0.0722);
-          let mono = dot(layers, weights) / length(weights);
-          // Color separation fades toward monochrome as highlights approach clipping.
-          let chroma = p[${GPU_PARAMS.GRAIN_CHROMA}] * (1.0 - 0.8 * smoothRange(0.88, 1.0, signal));
-          grain = vec3f(mono) + chroma * 0.6 * (layers - vec3f(mono));
-        }
-        grain *= 0.37;
-        let shadowWeight = pow(1.0 - signal, 2.0);
-        let highlightWeight = pow(signal, 2.0);
-        let midWeight = max(0.0, 1.0 - shadowWeight - highlightWeight);
-        let response = shadowWeight * p[${GPU_PARAMS.GRAIN_SHADOW_RESPONSE}] + midWeight * p[${GPU_PARAMS.GRAIN_MIDTONE_RESPONSE}] + highlightWeight * p[${GPU_PARAMS.GRAIN_HIGHLIGHT_RESPONSE}];
-        let amount = 0.18 * p[${GPU_PARAMS.GRAIN_AMOUNT}] * master * response * pixelCoverage;
-        return grain * amount;
-    }
     fn filmGrainStops(rgb: vec3f, coordinate: vec2i, master: f32) -> vec3f {
+      if (p[${GPU_PARAMS.GRAIN_ENABLED}] < 0.5 || p[${GPU_PARAMS.GRAIN_AMOUNT}] <= 0.0) { return vec3f(0.0); }
       let scale = clamp(p[${GPU_PARAMS.SOURCE_PIXEL_SCALE}], 0.05, 1.0);
-      if (scale >= 1.0) { return filmGrainSample(rgb, coordinate, master, vec2f(0.0), 1.0); }
-      let count = min(4u, u32(ceil(1.0 / scale)));
-      if (grainSampleLimit < count * count) {
-        if (grainSampleLimit <= 1u) { return filmGrainSample(rgb, coordinate, master, vec2f(0.0), scale); }
-        let columns = select(select(2u, 3u, grainSampleLimit == 6u), 4u, grainSampleLimit >= 8u);
-        let rows = max(1u, grainSampleLimit / columns);
-        var reduced = vec3f(0.0);
-        for (var row = 0u; row < rows; row++) {
-          for (var column = 0u; column < columns; column++) {
-            let offset = (vec2f(f32(column), f32(row)) + vec2f(0.5)) / vec2f(f32(columns), f32(rows)) - vec2f(0.5 * scale);
-            reduced += filmGrainSample(rgb, coordinate, master, offset, scale);
-          }
+      let pixelsPerMm = filmPixelsPerMm(frameDimensions());
+      let physicalPitch = pixelsPerMm * (6.0 + 24.0 * p[${GPU_PARAMS.GRAIN_SIZE}]) / 1000.0;
+      let pixelCoverage = min(1.0, physicalPitch / scale);
+      let frame = vec2f(frameCoordinate(coordinate)) + vec2f(0.5);
+      let signal = clamp(filmSignalFromLuma(max(filmLuma(rgb), 0.0)), 0.0, 1.0);
+      // Color negative: three dye layers, blue coarsest, each developed by
+      // its own channel. Black & white: one layer of sharper, denser silver.
+      let blackAndWhite = p[${GPU_PARAMS.GRAIN_FILM_TYPE}] > 0.5;
+      let spacing = 0.43 * (1.11 - 0.22 * p[${GPU_PARAMS.GRAIN_SOFTNESS}]);
+      // Both lanes develop the same grains (_grain_development_signals in
+      // adjustments.py): HDR in sRGB primaries, reference white scaled onto
+      // SDR's, encoded as SDR is, and fully developed by signal 0.45 before
+      // the lanes' tone curves part. Otherwise the gain map fills with grain.
+      let developLinear = select(rgb, acescgToSrgb(rgb) * 2.7367268, p[${GPU_PARAMS.HDR_LANE}] > 0.5);
+      let developLuma = clamp(srgbEncode(clamp(lumaSrgb(developLinear), 0.0, 1.0)) / 0.45, 0.0, 1.0);
+      var grain = vec3f(0.0);
+      if (blackAndWhite) {
+        let silverPitch = max(scale, physicalPitch);
+        var silver = grainLayerNoise(frame, spacing * silverPitch, scale, developLuma, 239u, true);
+        if (developLuma < 1.0) {
+          let shadow = 1.0 - developLuma;
+          silver += ((3.35 * 0.46) * (shadow * shadow)) * grainFootprint(frame, 1.5 * silverPitch, 341u).x;
         }
-        return reduced / f32(columns * rows);
+        grain = vec3f(silver);
+      } else {
+        let developRgb = clamp(developLinear, vec3f(0.0), vec3f(1.0));
+        let channelSignal = clamp(
+          vec3f(srgbEncode(developRgb.r), srgbEncode(developRgb.g), srgbEncode(developRgb.b)) / 0.45, vec3f(0.0), vec3f(1.0)
+        );
+        let layers = vec3f(
+          grainLayerNoise(frame, spacing * max(scale, physicalPitch * 0.9), scale, channelSignal.r, 211u, false),
+          grainLayerNoise(frame, spacing * max(scale, physicalPitch), scale, channelSignal.g, 223u, false),
+          grainLayerNoise(frame, spacing * max(scale, physicalPitch * 1.3), scale, channelSignal.b, 227u, false)
+        );
+        let weights = vec3f(0.2126, 0.7152, 0.0722);
+        let mono = dot(layers, weights) / length(weights);
+        // Color separation fades toward monochrome as highlights approach clipping.
+        let chroma = p[${GPU_PARAMS.GRAIN_CHROMA}] * (1.0 - 0.8 * smoothRange(0.88, 1.0, signal));
+        grain = vec3f(mono) + chroma * 0.6 * (layers - vec3f(mono));
       }
-      var sum = vec3f(0.0);
-      for (var y = 0u; y < count; y++) {
-        for (var x = 0u; x < count; x++) {
-          let offset = (vec2f(f32(x), f32(y)) + vec2f(0.5)) / f32(count) - vec2f(0.5 * scale);
-          sum += filmGrainSample(rgb, coordinate, master, offset, scale);
-        }
-      }
-      return sum / f32(count * count);
+      grain *= 0.37;
+      let shadowWeight = pow(1.0 - signal, 2.0);
+      let highlightWeight = pow(signal, 2.0);
+      let midWeight = max(0.0, 1.0 - shadowWeight - highlightWeight);
+      let response = shadowWeight * p[${GPU_PARAMS.GRAIN_SHADOW_RESPONSE}] + midWeight * p[${GPU_PARAMS.GRAIN_MIDTONE_RESPONSE}] + highlightWeight * p[${GPU_PARAMS.GRAIN_HIGHLIGHT_RESPONSE}];
+      let amount = 0.18 * p[${GPU_PARAMS.GRAIN_AMOUNT}] * master * response * pixelCoverage;
+      return grain * amount;
     }
     // Integer texel reads avoid texture-size-dependent normalized sampler
     // rounding between a frame and a tile. The interpolation is unchanged.
@@ -3401,9 +3332,9 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       textureStore(filmDetailOutput, coordinate, storeFilm(applyOutputExposure(finishStructure(rgb, blur, coordinate))));
     }
 
-    const LENS_COMPONENTS = array<vec4f,108>(${LENS_COMPONENTS_WGSL});
+    const LENS_COMPONENTS = array<vec4f,${LENS_TABLE_LENGTH}>(${LENS_COMPONENTS_WGSL});
     fn lensComponent(index: u32) -> vec4f {
-      return LENS_COMPONENTS[(u32(p[${GPU_PARAMS.LENS_FILTER}])-1u)*27u+index];
+      return LENS_COMPONENTS[(u32(p[${GPU_PARAMS.LENS_FILTER}])-1u)*${LENS_LOBE_COUNT}u+index];
     }
     fn lensSigma(index: u32) -> f32 {
       return max(0.000001,lensComponent(index).x*p[${GPU_PARAMS.LENS_SIZE}]*filmPixelsPerMm(frameDimensions())/(1000.0*spatialScale()));
@@ -3423,11 +3354,11 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
     @fragment fn lensExtractFragmentMain(input: VertexOut) -> @location(0) vec4f {
       return vec4f(lensSourceAtSpatial(vec2i(input.position.xy)),1.0);
     }
-    // One full-precision weight per tap, not an exponential per image pixel.
-    // Both blurs still normalize in the original tap order, and the vertical
-    // pass still blends all 27 components in order into the half-float target.
+    // A Gaussian's negative and positive taps have the same weight.
+    // Keep the center and positive half in the full-precision tap table.
     fn lensGaussianWeight(tap: i32, sigma: f32) -> f32 {
-      return exp(-0.5*(f32(tap)/sigma)*(f32(tap)/sigma));
+      let distance = f32(tap) / sigma;
+      return exp(-0.5 * distance * distance);
     }
     @fragment fn lensWeightsFragmentMain(input: VertexOut) -> @location(0) f32 {
       let column = i32(input.position.x);
@@ -3435,39 +3366,34 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       let extent = lensExtent(sigma);
       if (column == ${LENS_KERNEL_TAPS}) { return f32(extent); }
       if (column == ${LENS_KERNEL_TAPS + 1}) {
-        var sum = 0.0;
-        for (var tap = -extent; tap <= extent; tap++) { sum += lensGaussianWeight(tap, sigma); }
+        var sum = 1.0;
+        for (var tap = 1; tap <= extent; tap++) { sum += 2.0 * lensGaussianWeight(tap, sigma); }
         return sum;
       }
-      let tap = column - ${LENS_KERNEL_LIMIT};
-      return lensGaussianWeight(tap, sigma);
+      return lensGaussianWeight(column, sigma);
     }
     fn lensWeight(column: i32, component: u32) -> f32 {
       return textureLoad(lensWeights, vec2i(column, i32(component)), 0).r;
     }
-    @fragment fn lensHorizontalFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let extent = i32(lensWeight(${LENS_KERNEL_TAPS}, input.lensComponent));
-      let base = vec2i(input.position.xy);
+    fn lensBlurAxis(input: VertexOut, axis: vec2i) -> vec3f {
+      let component = input.lensComponent;
+      let extent = i32(lensWeight(${LENS_KERNEL_TAPS}, component));
       let upper = validSpatialDimensions() - vec2i(1);
-      let row = clamp(base.y, 0, upper.y);
-      var total = vec3f(0.0);
-      for (var x = -extent; x <= extent; x++) {
-        let weight = lensWeight(x + ${LENS_KERNEL_LIMIT}, input.lensComponent);
-        total += textureLoad(spatialTexture, vec2i(clamp(base.x + x, 0, upper.x), row), 0).rgb * weight;
+      let center = clamp(vec2i(input.position.xy), vec2i(0), upper);
+      var total = textureLoad(spatialTexture, center, 0).rgb;
+      for (var tap = 1; tap <= extent; tap++) {
+        let offset = tap * axis;
+        let a = textureLoad(spatialTexture, max(center - offset, vec2i(0)), 0).rgb;
+        let b = textureLoad(spatialTexture, min(center + offset, upper), 0).rgb;
+        total += (a + b) * lensWeight(tap, component);
       }
-      return vec4f(total / lensWeight(${LENS_KERNEL_TAPS + 1}, input.lensComponent), 1.0);
+      return total / lensWeight(${LENS_KERNEL_TAPS + 1}, component);
+    }
+    @fragment fn lensHorizontalFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      return vec4f(lensBlurAxis(input, vec2i(1, 0)), 1.0);
     }
     @fragment fn lensVerticalFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let extent = i32(lensWeight(${LENS_KERNEL_TAPS}, input.lensComponent));
-      let base = vec2i(input.position.xy);
-      let upper = validSpatialDimensions() - vec2i(1);
-      let column = clamp(base.x, 0, upper.x);
-      var total = vec3f(0.0);
-      for (var y = -extent; y <= extent; y++) {
-        let weight = lensWeight(y + ${LENS_KERNEL_LIMIT}, input.lensComponent);
-        total += textureLoad(spatialTexture, vec2i(column, clamp(base.y + y, 0, upper.y)), 0).rgb * weight;
-      }
-      return vec4f(total / lensWeight(${LENS_KERNEL_TAPS + 1}, input.lensComponent) * lensComponent(input.lensComponent).yzw, 0.0);
+      return vec4f(lensBlurAxis(input, vec2i(0, 1)) * lensComponent(input.lensComponent).yzw, 0.0);
     }
 
     @fragment fn spatialExtractFragmentMain(input: VertexOut) -> @location(0) vec4f {
@@ -3962,7 +3888,6 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
   `;
 
   const HDRWebGPUShaders = Object.freeze({
-    GRAIN_SAMPLE_COUNTS,
     BLACK_AND_WHITE_PARAM,
     FILM_DETAIL_BLOCK,
     PEAK_REDUCTION_SHADER_SOURCE,

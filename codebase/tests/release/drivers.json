@@ -4871,47 +4871,11 @@
         "export-proof"
       ],
       "tier": "area",
-      "protects": "Default grain and one-sample draft remain byte-identical to their frozen numerical references across scale, size, film type and lane.",
+      "protects": "A GPU grain pixel matches the mean of the same field sampled with sixteen aligned finer pixel footprints.",
       "launch": {
         "method": "electron"
       },
-      "brief": "Default grain and one-sample draft remain byte-identical to their frozen numerical references across scale, size, film type and lane. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
-      "expectedMinutes": {
-        "win": null,
-        "mac": null
-      },
-      "deadlineMinutes": 15,
-      "deadlinePolicy": "Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.",
-      "requirements": [
-        "Repository setup completed; Node/npm dependencies installed.",
-        "Electron/Playwright and backend virtual environment with native tools from setup.",
-        "Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile.",
-        "Shared GPU-run lock; real-app checks must not overlap.",
-        "WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal."
-      ],
-      "platforms": {
-        "os": [
-          "win",
-          "mac",
-          "linux"
-        ],
-        "notes": [
-          "Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.",
-          "MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock."
-        ]
-      }
-    },
-    {
-      "path": "tests/grade-grain-pruning.js",
-      "areas": [
-        "film"
-      ],
-      "tier": "area",
-      "protects": "Grade tile grain pruning preserves the original WebGPU grain samples bit for bit.",
-      "launch": {
-        "method": "electron"
-      },
-      "brief": "Grade tile grain pruning preserves the original WebGPU grain samples bit for bit. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
+      "brief": "A GPU grain pixel matches the mean of the same field sampled with sixteen aligned finer pixel footprints. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
       "expectedMinutes": {
         "win": null,
         "mac": null
@@ -5116,6 +5080,43 @@
       }
     },
     {
+      "path": "tests/helpers/film-parity-capture.cjs",
+      "areas": [
+        "film",
+        "lens"
+      ],
+      "tier": "full",
+      "protects": "Request-owned readback of the actual Direct and Tiled WebGPU canvas submissions.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/lens-filter-tiled-parity.js",
+          "tests/tiled-film-parity.js"
+        ]
+      },
+      "brief": "Reads the rendered WebGPU canvas for the specific parity probe before a later presentation can replace it. Runs only through its parent drivers.",
+      "expectedMinutes": {
+        "win": null,
+        "mac": null
+      },
+      "deadlineMinutes": null,
+      "deadlinePolicy": "Parent attempt deadline applies.",
+      "requirements": [
+        "Repository setup completed; Node/npm dependencies installed.",
+        "Parent driver(s): tests/lens-filter-tiled-parity.js, tests/tiled-film-parity.js."
+      ],
+      "platforms": {
+        "os": [
+          "win",
+          "mac",
+          "linux"
+        ],
+        "notes": [
+          "Runs under the parent's shared GPU lock."
+        ]
+      }
+    },
+    {
       "path": "tests/lens-filter-parity.js",
       "areas": [
         "lens"
@@ -5162,10 +5163,10 @@
       "launch": {
         "method": "electron"
       },
-      "brief": "Physical lens filters: exact Direct/Tiled bytes at Fit and native, and exact Mist reuse and invalidation with Grade edits. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
+      "brief": "Compares the actual Direct and Tiled WebGPU submissions at Fit and native with one authored highlight peak per lane. Compares reused and fresh Mist byte for byte after Grade edits and checks that the cache is invalidated or released when expected.",
       "expectedMinutes": {
         "win": null,
-        "mac": null
+        "mac": 2
       },
       "deadlineMinutes": 15,
       "deadlinePolicy": "Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.",
@@ -12161,14 +12162,14 @@
         "film"
       ],
       "tier": "area",
-      "protects": "tiled film parity",
+      "protects": "Exact Direct/Tiled Film pixels and same-scale live/settled Grain on the presented canvas.",
       "launch": {
         "method": "electron"
       },
-      "brief": "tiled film parity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
+      "brief": "Compares the actual Direct and Tiled WebGPU submissions byte for byte, including Grain, Mist, Halation and Detail. Also checks that live and settled Grain match at the same scale.",
       "expectedMinutes": {
         "win": null,
-        "mac": null
+        "mac": 0.25
       },
       "deadlineMinutes": 15,
       "deadlinePolicy": "Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.",

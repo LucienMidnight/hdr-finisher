@@ -57,6 +57,7 @@ Open the file named for the thing you are changing. Most files are focused.
 | Opening files | `loader.py`, `raw_import.py`, `linear_dng.py`, `dng_color.py`, `dng_opcodes.py`, `gainmap_decoders.py`, `jpegxl.py`, `avif_info.py`, `metadata.py`, `import_jobs.py`, `media_browser.py`, `resource_preflight.py` |
 | Colour | `color.py`, `color_context.py`, `sdr_gamut.py`, `analysis.py`, `source_luminance.py` |
 | Global adjustments (the exact reference) | `adjustments.py`, `detail.py`, `finishing.py` (geometry and output finishing), `film_grain.py`, `denoise_adaptive.py` (Standard), `denoise_grain.py` (Clean Grain and shared grain primitives), `denoise_micro_grain.py` (Micro Grain) |
+| Film Mist point spread | `lens_filter.py` (CPU), `lens-filters.js` (GPU coefficients and tile reach), and `webgpu-shaders.js` (convolution). Reproduce the eight-lobe RGB fit with [f2-fit-mist.py](research/film-speed-2026-11-28/f2-fit-mist.py). |
 | Local adjustments and masks | `local_adjustments.py`, `mask_softness.py`, `mask_work.py` |
 | Shared float32 box pass | `box_blur.py`; detail, Film Look and local masks retain their own strip scheduling |
 | SDR Match | `sdr_match.py`, `sdr_match_inputs.py`, `sdr_match_remote.py` |

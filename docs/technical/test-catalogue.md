@@ -11,9 +11,9 @@ The selection depends on changed areas since the last tag. Core is the smallest 
 | Selection | Drivers | Windows minutes + retry | Windows unknown | Mac minutes + retry | Mac unknown |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Core | 34 | 0.00 + 0.00 | 34 | 21.55 + 0.00 | 2 |
-| All areas | 125 | 17.30 + 0.00 | 123 | 66.60 + 0.21 | 2 |
+| All areas | 124 | 17.30 + 0.00 | 122 | 66.55 + 0.21 | 2 |
 | export-proof | 54 | 13.74 + 0.00 | 53 | 36.83 + 0.00 | 2 |
-| film | 44 | 3.56 + 0.00 | 43 | 28.79 + 0.00 | 2 |
+| film | 43 | 3.56 + 0.00 | 42 | 28.74 + 0.00 | 2 |
 | lens | 37 | 0.00 + 0.00 | 37 | 23.42 + 0.00 | 2 |
 | library | 68 | 0.00 + 0.00 | 68 | 37.00 + 0.07 | 2 |
 | masks | 52 | 13.74 + 0.00 | 51 | 32.53 + 0.00 | 2 |
@@ -89,7 +89,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/grade-panel-order.test.js | both lanes interleave the same live sections without losing their identity or fold state | 3 | 0.0093 | unknown |  |
 | tests/grade-paste.test.js | paste selection preserves partial choices and inactive lane values | 18 | 0.036 | unknown |  |
 | tests/grade-preview-settle.test.js | a zoomed tiled edit settles exactly once after edit sync and requests one scope | 14 | 3.3591 | unknown |  |
-| tests/grade-speed.test.js | only interactive and coarse requests reduce grain, never delivery or measurement | 16 | 0.1095 | unknown |  |
+| tests/grade-speed.test.js | scheduled coarse requests reach the renderer without downgrading settled requests | 15 | 0.1095 | unknown |  |
 | tests/grade-tile-reuse.test.js | catch-up reuses tiles when the saved revision is the only change | 6 | 0.0636 | unknown |  |
 | tests/grading-preset-files.test.js | saved grading presets round trip without changing settings | 7 | 0.0106 | unknown |  |
 | tests/grain-route.test.js | the help line appears only when the slower CPU route is used or the method cannot run | 21 | 0.7219 | unknown |  |
@@ -277,7 +277,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/test_file_gate.py | The Library's file gate: which files are listed and read (design section 6.9, edge cases F1-F18). | 38 | 1.662 | unknown | windows_only; pytest.mark.skipif(not WINDOWS, reason="Windows file attributes"); pytest.mark.skipif(not WINDOWS, reason="Windows junctions") |
 | tests/test_film_character.py | Stock metadata and saved ownership; rendering equations remain unchanged. | 23 | 0.0683 | unknown |  |
 | tests/test_film_controls.py | Physical paper/development controls; measured source data stays immutable. | 31 | 3.7415 | unknown |  |
-| tests/test_film_grain.py | The film grain field: statistics, texture, film types and strip exactness. | 19 | 4.3681 | unknown |  |
+| tests/test_film_grain.py | The film grain field: statistics, texture, film types and strip exactness. | 17 | 4.3681 | unknown |  |
 | tests/test_film_stock.py | Checks film stock behavior and regression contracts. | 237 | 12.33 | unknown | Conditional skip: not (REAL_STOCK_DIR / 'kodak_portra_400.json').is_file(); pytest.skip("kodak_portra_400.json has not been baked yet") |
 | tests/test_focus_cached_map.py | Checks focus cached map behavior and regression contracts. | 3 | 0.7316 | unknown |  |
 | tests/test_focus_camera_api.py | Checks focus camera api behavior and regression contracts. | 4 | 1.1004 | unknown |  |
@@ -302,7 +302,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/test_graceful_grades.py | Result checks for damaged and future saved grades. All files are disposable. | 45 | 3.3949 | unknown |  |
 | tests/test_grade_open_reuse.py | Fast source identity and single-decode checks using disposable pixels. | 6 | 1.1631 | unknown |  |
 | tests/test_grade_sweep_summary.py | Release reporting distinguishes frame noise and cancelled work from failures. | 2 | 0.0016 | unknown |  |
-| tests/test_grain_work.py | Cancellation and exact grain output from baseline 88775059. | 13 | 6.0651 | unknown | Conditional skip: cpu_budget.logical_cpus() < 2; pytest.skip("Multiple CPU workers are needed") |
+| tests/test_grain_work.py | Film Grain cancellation, priority and deterministic output. | 13 | 6.0651 | unknown | Conditional skip: cpu_budget.logical_cpus() < 2; pytest.skip("Multiple CPU workers are needed") |
 | tests/test_hdr_ceiling.py | Decoded HDR target enforcement and local correction. | 94 | 502.9115 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; Conditional skip: not (resolve_binary('avifgainmaputil') and resolve_binary('avifdec')); pytest.skip("Bundled AVIF gain-map tools are unavailable."); pytest.skip(backend.capability.detail) |
 | tests/test_hdr_delivery.py | Checks hdr delivery behavior and regression contracts. | 6 | 24.2887 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; pytest.skip(backend.capability.detail) |
 | tests/test_hdr_from_sdr.py | Checks hdr from sdr behavior and regression contracts. | 17 | 0.4837 | unknown |  |
@@ -704,7 +704,7 @@ Shared Edge colour reconstruction executes on hardware GPU and agrees with CPU s
 
 #### `tests/grain-sampling.js`
 
-Default grain and one-sample draft remain byte-identical to their frozen numerical references across scale, size, film type and lane. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+A GPU grain pixel matches the mean of the same field sampled with sixteen aligned finer pixel footprints. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac 0.056.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -915,15 +915,6 @@ Film stock: the WebGPU preview matches the CPU export. Runs assertions and captu
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
-#### `tests/grade-grain-pruning.js`
-
-Grade tile grain pruning preserves the original WebGPU grain samples bit for bit. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
-
-- Expected minutes: Windows unknown; Mac 0.052.
-- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
-- Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
-- Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
-
 #### `tests/grain-parity.js`
 
 Film grain: the WebGPU preview matches the CPU export. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
@@ -935,7 +926,7 @@ Film grain: the WebGPU preview matches the CPU export. Runs assertions and captu
 
 #### `tests/grain-sampling.js`
 
-Default grain and one-sample draft remain byte-identical to their frozen numerical references across scale, size, film type and lane. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+A GPU grain pixel matches the mean of the same field sampled with sixteen aligned finer pixel footprints. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac 0.056.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -980,7 +971,7 @@ Linked SDR common HDR creatives and overlapping locals; finished float CPU/GPU a
 
 #### `tests/tiled-film-parity.js`
 
-tiled film parity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Compares the actual Direct and Tiled WebGPU submissions byte for byte, including Grain, Mist, Halation and Detail. Also checks that live and settled Grain match at the same scale.
 
 - Expected minutes: Windows unknown; Mac 0.386.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -1024,6 +1015,15 @@ Real RAW stacked Film grade: native Exposure with HSL Pick armed at Fit and 100%
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00264.ARW; DSC00264.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
+
+#### `tests/helpers/film-parity-capture.cjs`
+
+Reads the rendered WebGPU canvas for the specific parity probe before a later presentation can replace it. Runs only through its parent drivers.
+
+- Expected minutes: Windows unknown; Mac unknown.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
+- Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/lens-filter-tiled-parity.js, tests/tiled-film-parity.js.
+- Platforms: win, mac, linux. Runs under the parent's shared GPU lock.
 
 #### `tests/performance/film-look-interaction.js`
 
@@ -1157,6 +1157,15 @@ Compare the visible contribution of spatial film effects at 4K and Full. The pag
 
 ### lens / full
 
+#### `tests/helpers/film-parity-capture.cjs`
+
+Reads the rendered WebGPU canvas for the specific parity probe before a later presentation can replace it. Runs only through its parent drivers.
+
+- Expected minutes: Windows unknown; Mac unknown.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
+- Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/lens-filter-tiled-parity.js, tests/tiled-film-parity.js.
+- Platforms: win, mac, linux. Runs under the parent's shared GPU lock.
+
 #### `tests/lens-filter-parity.js`
 
 Film stock: the WebGPU preview matches the CPU export. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
@@ -1168,9 +1177,9 @@ Film stock: the WebGPU preview matches the CPU export. Runs assertions and captu
 
 #### `tests/lens-filter-tiled-parity.js`
 
-Physical lens filters: exact Direct/Tiled bytes at Fit and native, and exact Mist reuse and invalidation with Grade edits. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Compares the actual Direct and Tiled WebGPU submissions at Fit and native with one authored highlight peak per lane. Compares reused and fresh Mist byte for byte after Grade edits and checks that the cache is invalidated or released when expected.
 
-- Expected minutes: Windows unknown; Mac unknown.
+- Expected minutes: Windows unknown; Mac 2.000.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
@@ -3331,7 +3340,7 @@ Real Leica/DJI Grade DNG import preserves finished SDR/HDR and borders through b
 
 #### `tests/grain-sampling.js`
 
-Default grain and one-sample draft remain byte-identical to their frozen numerical references across scale, size, film type and lane. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+A GPU grain pixel matches the mean of the same field sampled with sixteen aligned finer pixel footprints. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac 0.056.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.

@@ -72,11 +72,6 @@
     .map(([, index]) => index);
 
   class HDRWebGPUPreview {
-    static usesDraftGrain(options = {}) {
-      return !options.delivery && !options.measureOnly
-        && (options.tier === "interactive" || Boolean(options.coarse));
-    }
-
     static directPreviewMemoryModel(width, height, options = {}) {
       return directPreviewMemoryModel(width, height, options);
     }
@@ -2933,6 +2928,7 @@
         analysisMasks: sourceOptions?.analysisMasks,
         analysisNativeLuma: sourceOptions?.analysisNativeLuma,
         claritySurround: sourceOptions?.claritySurround,
+        onFrameSubmitted: sourceOptions?.onFrameSubmitted,
         Scheduler,
         serial,
         signal: sourceOptions?.signal,
@@ -4384,9 +4380,6 @@
       const denoiseIdentity = denoiseActive
         ? `|denoise:${denoiseSelector.identity}:${JSON.stringify(denoiseControls)}`
         : "";
-      const draftGrain = HDRWebGPUPreview.usesDraftGrain(options);
-      const grainIdentity = draftGrain && params[GPU_PARAMS.GRAIN_ENABLED] > 0.5 && params[GPU_PARAMS.GRAIN_AMOUNT] > 0
-        ? `|draft-grain:${window.HDRWebGPUShaders.GRAIN_SAMPLE_COUNTS.draft}` : "";
       const gradeTileParams = options.gradePreview && !activeLocals.length && !denoiseActive
         ? new Float32Array(params) : null;
       const previous = this.lastPresentedFrame;
@@ -4400,7 +4393,7 @@
         && previous.applicationGeneration === Number(options.applicationGeneration ?? 0)
         && previous?.gradeTileParams?.every((value, index) => Object.is(value, gradeTileParams[index]))
         ? previous.tileRevision : editRevision;
-      const identity = `${proxy.identity}|${tileRevision}|${surface.format}${noiseView ? "|noise" : ""}${denoiseIdentity}${grainIdentity}`;
+      const identity = `${proxy.identity}|${tileRevision}|${surface.format}${noiseView ? "|noise" : ""}${denoiseIdentity}`;
       const nodes = ["geometry"];
       if (denoiseActive) nodes.push({ id: "denoise", halo });
       nodes.push("exposure", "white-balance", "curves", "color", "grading");
@@ -5310,7 +5303,7 @@
           );
           this.encodeFilmChain(encoder, pipelines, graph, localSource.createView(),
             (source, spatial, original) => bind(source, spatial, original), params, width, height,
-            { interactive: draftGrain, pruneGrain: options.gradePreview, lensGlowTile, parameterBinding });
+            { lensGlowTile, parameterBinding });
         }
         if (options.delivery) {
           encoder.copyTextureToTexture(
@@ -5566,7 +5559,7 @@
         if (processedTiles > 0) measuredPeak = await this.readScopePeak(peakTarget);
         else peakTarget.busy = false;
       }
-      if (measuredPeak !== null && !measureOnly && !grainIdentity) {
+      if (measuredPeak !== null && !measureOnly) {
         this.exactScopePeak = {
           peak: measuredPeak,
           lane,
@@ -5673,7 +5666,7 @@
       this.recordStage(measureOnly ? "tiled-measure" : "tiled-render", { lane, longEdge, ...metrics });
       return {
         rendered: true, refusals: [], width: proxy.width, height: proxy.height,
-        approximate: Boolean(grainIdentity),
+        approximate: false,
         hdr: surface.hdr, proxyFormat: proxy.pixelFormat,
         sourceSerial: proxy.sourceSerial ?? null, execution: "tiled", metrics,
       };
@@ -6498,9 +6491,7 @@
         const glowEncoded = this.encodeFilmChain(encoder, pipelines, intermediate, localSource.createView(),
           (source, spatial, original) => makeBindGroup(source, spatial, this.paramBuffer, original),
           params, proxy.width, proxy.height,
-          { interactive: HDRWebGPUPreview.usesDraftGrain(sourceOptions || {}),
-            pruneGrain: sourceOptions?.gradePreview && !sourceOptions?.delivery && !sourceOptions?.measureOnly,
-            lensGlowKey, parameterBinding: { buffer: this.paramBuffer } });
+          { lensGlowKey, parameterBinding: { buffer: this.paramBuffer } });
         if (!glowEncoded) lensGlowKey = null;
       }
       if (finishedSdrAnchor && !sourceOptions?.delivery) {
@@ -6684,8 +6675,7 @@
       }
       draftReturned = true;
       return {
-        approximate: approximateDenoise || Boolean(HDRWebGPUPreview.usesDraftGrain(sourceOptions || {})
-          && params[GPU_PARAMS.GRAIN_ENABLED] > 0.5 && params[GPU_PARAMS.GRAIN_AMOUNT] > 0),
+        approximate: approximateDenoise,
         presentationTexture: draftPresentation,
         presentationFormat: surface.format,
         width: proxy.width,
@@ -9644,8 +9634,7 @@
         filmInput = filmView;
       }
       if (halation) spatial();
-      const finish = options.interactive ? pipelines.finishInteractive
-        : options.pruneGrain ? pipelines.finishPrunedGrain : pipelines.finish;
+      const finish = pipelines.finish;
       const structure = params[GPU_PARAMS.STRUCTURE_ENABLED] > 0.5
         && (Math.abs(params[GPU_PARAMS.STRUCTURE_SOFTNESS]) > 0.000001 || Math.abs(params[GPU_PARAMS.STRUCTURE_MICROCONTRAST]) > 0.000001);
       const map = active && ((halation && params[GPU_PARAMS.HALATION_VIEW_MAP] > 0.5)
@@ -9784,18 +9773,6 @@
         fragment: { module: this.module, entryPoint: "finishFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const finishPrunedGrain = create({
-        layout: this.pipelineLayout,
-        vertex: { module: this.module, entryPoint: "vertexMain" },
-        fragment: { module: this.module, entryPoint: "finishFragmentMain", constants: { pruneGrain: true }, targets: [{ format: "rgba16float" }] },
-        primitive: { topology: "triangle-list" },
-      });
-      const finishInteractive = create({
-        layout: this.pipelineLayout,
-        vertex: { module: this.module, entryPoint: "vertexMain" },
-        fragment: { module: this.module, entryPoint: "finishFragmentMain", constants: { grainSampleLimit: window.HDRWebGPUShaders.GRAIN_SAMPLE_COUNTS.draft }, targets: [{ format: "rgba16float" }] },
-        primitive: { topology: "triangle-list" },
-      });
       const composite = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
@@ -9876,8 +9853,6 @@
         hslFields,
         hslMask,
         finish,
-        finishPrunedGrain,
-        finishInteractive,
         scopePeakTile,
         local,
         localCandidate,

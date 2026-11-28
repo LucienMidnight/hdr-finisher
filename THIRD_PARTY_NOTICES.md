@@ -177,10 +177,11 @@ are derived from the same CC BY-SA 4.0 profiles credited above, extracted by
 spektrafilm `model/diffusion.py` family shapes, halo-channel redistribution and
 commercial strength mapping, plus `utils/fast_gaussian_filter.py`'s three-Gaussian
 exponential surrogate, at GPL-3.0 revision `3bb2c2d`.
-Source: https://github.com/andreavolpato/spektrafilm . All 27 components are kept;
-rounded amplitudes are normalized, and each Gaussian is cropped and normalized
-inside HDR Finisher's existing spatial cap. Explicit bounded kernels replace
-the upstream recursive large-sigma implementation; edge handling is clamped.
+Source: https://github.com/andreavolpato/spektrafilm . HDR Finisher fits eight
+RGB-weighted Gaussian lobes to the original 27-component response for each
+filter. The lobes are cropped and normalized inside the existing spatial cap.
+Explicit bounded kernels replace the upstream recursive large-sigma
+implementation. Edge handling is clamped.
 
 ### Oklab conversions in the isolated HSL prototype
 

@@ -44,6 +44,17 @@ const harness = global.HDRFinisherElectronTestHarness;
     Object.assign(edit.document.global_adjustments.hdr, {
       exposure:Number(process.env.HDR_CEILING_EXPOSURE || 3), highlight_section_enabled:true, highlight_compression_target_nits:1000,
     });
+    // Opt in without changing the existing no-Film ceiling fixture. The
+    // output ceiling and Proof identity also apply when real Film Grain is
+    // in the production finish graph of both delivery renderers.
+    if (process.argv.includes('--film-grain')) {
+      for (const lane of ['hdr', 'sdr']) {
+        const branch = edit.document.global_adjustments[lane];
+        branch.film_look_section_enabled = true;
+        Object.assign(branch.film_look, { film_stock: 'kodak_portra_400', grain_enabled: true,
+          grain_amount: 80, grain_size: 50, grain_chroma: 40, grain_film_format: '35mm' });
+      }
+    }
     await api(`/api/session/${id}/edit-state?expected_revision=${edit.revision}`, edit.document, 'PUT');
     if (benchmark) {
       await api('/api/delivery/preferences', {force_cpu:false});
