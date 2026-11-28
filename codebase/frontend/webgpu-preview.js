@@ -6174,7 +6174,7 @@
       // response pass sample from the same texture it renders into, which is
       // invalid in WebGPU even when the inactive shader branch never samples it.
       const fallbackSpatialView = sourceProxy.texture.createView();
-      const spatialSource = !releaseGradeScratch?.spatial && intermediate.spatialATexture;
+      const spatialSource = releaseGradeScratch?.spatial ? null : intermediate.spatialATexture;
       const spatialAView = spatialSource?.createView() || fallbackSpatialView;
       // Show noise binds the original as the source and the resolved picture
       // in the overlay slot, so the base pass can difference the two.
