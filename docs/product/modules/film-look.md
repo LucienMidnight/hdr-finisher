@@ -244,7 +244,10 @@ Further preview grain approximation is an option for Steve, not implemented.
 
 # Module PRD: Film Look
 
-## November 16: grain sampling, drafts only; final decision pending
+## November 16: grain sampling, drafts only (historical)
+
+F1 replaces both sampling modes described below. The sample-count diagnostic
+still uses the pre-F1 shader to make the historical observations reproducible.
 
 The real-photo sweep compares sample caps 1/2/4/6/8/12/16 on DSC01287 and
 DSC00264, HDR/SDR, Fit 1024/4096, 50%/100%, saved baseline/strong/fine/coarse
