@@ -858,7 +858,7 @@
       "suite": "node",
       "area": "grade",
       "purpose": "only interactive and coarse requests reduce grain, never delivery or measurement",
-      "test_count": 14,
+      "test_count": 16,
       "seconds": {
         "windows": 0.1095,
         "mac": null
@@ -3728,7 +3728,7 @@
       "suite": "python",
       "area": "film",
       "purpose": "Physical paper/development controls; measured source data stays immutable.",
-      "test_count": 23,
+      "test_count": 31,
       "seconds": {
         "windows": 3.7415,
         "mac": null

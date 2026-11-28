@@ -420,3 +420,99 @@ test('only a Direct viewer presentation releases the previous tiled pins', async
   assert.equal(preview.presentedDenoiseTileKeys.size, 0);
   assert.equal(preview.presentedLensGlowTileFrameKey, null);
 });
+
+function stockFixture() {
+  const rows = Array.from({ length: 256 }, (_, i) => [i / 30, i / 40, i / 50]);
+  const table = { size: 2, domain_min: [0, 0, 0], domain_max: [1, 2, 3],
+    values: Array.from({ length: 24 }, (_, i) => i / 100) };
+  return { format: 'hdr-finisher-film-stock/2', type: 'negative', film_density_max: [1, 2, 3],
+    input_matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1], coupler_matrix: Array(9).fill(0),
+    film_log_exposure_range: [-3, 4], print_log_exposure_range: [-4, 3],
+    preflash_raw: [1, 1, 1], print_warmth_log_shift: [0, 0, 0], print_tint_log_shift: [0, 0, 0],
+    film_curves_plain: rows, film_curves_corrected: rows, print_curves: rows,
+    print_table: table, scan_table: table };
+}
+
+function filmStockHarness() {
+  const paths = [];
+  const base = stockFixture();
+  const calibrated = { ...base, scan_table: { ...base.scan_table, values: base.scan_table.values.map(x => x / 2) } };
+  const rowsFor = contrast => base.print_curves.map(row => row.map(x => Math.fround(x * (1 + contrast / 100))));
+  const ctx = vm.createContext({ window: {}, console, URLSearchParams, Float32Array, fetch: async path => {
+    paths.push(path);
+    const url = new URL(path, 'http://local.test');
+    if (url.pathname.endsWith('/print-curve')) {
+      const data = new DataView(new ArrayBuffer(256 * 3 * 4));
+      rowsFor(Number(url.searchParams.get('contrast'))).flat().forEach((x, i) => data.setFloat32(i * 4, x, true));
+      return { ok: true, arrayBuffer: () => data.buffer };
+    }
+    const stock = url.searchParams.has('lab_levels') ? calibrated : base;
+    return { ok: true, json: () => stock };
+  } });
+  vm.runInContext(frontendSource('gpu-param-layout.js'), ctx);
+  vm.runInContext(frontendSource('film-stocks.js'), ctx);
+  return { stocks: ctx.window.HDRFilmStocks, paths, base, calibrated, rowsFor };
+}
+
+test('print contrast shares the calibrated stock and writes exact rows after each slot warms', async () => {
+  const { stocks, paths, calibrated, rowsFor } = filmStockHarness();
+  const uploads = new Map();
+  const gpu = new Map();
+  const writes = [];
+  const queue = { writeBuffer(_buffer, byteOffset, values) {
+    writes.push(values.byteLength);
+    const index = Math.floor(byteOffset / (stocks.slotFloats * 4));
+    if (!gpu.has(index)) gpu.set(index, new Float32Array(stocks.slotFloats));
+    gpu.get(index).set(values, (byteOffset / 4) % stocks.slotFloats);
+  } };
+  const id = 'kodak_portra_800';
+  const film = { push_pull: 2, print_paper: 'kodak_2383', lab_levels: true };
+  const first = { ...film, print_contrast: 1 };
+  const load = stocks.request(id, first);
+  assert.equal(stocks.request(id, first), load);
+  await Promise.all([load, stocks.request(id, { ...film, print_contrast: 2 })]);
+
+  for (let contrast = 1; contrast <= 12; contrast++) {
+    const recipe = { ...film, print_contrast: contrast };
+    await stocks.request(id, recipe);
+    const slot = stocks.slot(id, recipe);
+    assert.ok(slot > 0);
+    writes.length = 0;
+    stocks.writeLoadedSlots(queue, {}, uploads);
+    assert.deepEqual(gpu.get(slot - 1), stocks.packFilmStock({ ...calibrated, print_curves: rowsFor(contrast) }));
+    if (contrast > 8) assert.deepEqual(writes, [3072]);
+  }
+  assert.equal(stocks.loadedCount, 8);
+  const basePath = '/api/film-stocks/kodak_portra_800_push2?paper=kodak_2383&lab_levels=true';
+  assert.deepEqual(paths.filter(path => !path.includes('/print-curve?')), [basePath]);
+  assert.equal(paths.length, 13);
+  assert.ok(paths.includes('/api/film-stocks/kodak_portra_800_push2/print-curve?paper=kodak_2383&contrast=12'));
+
+  // The base recipe was evicted as a slot, but the exact data still lives
+  // with its variants. Returning to zero must restore the unmodified rows.
+  await stocks.request(id, film);
+  const baseSlot = stocks.slot(id, film);
+  writes.length = 0;
+  stocks.writeLoadedSlots(queue, {}, uploads);
+  assert.deepEqual(writes, [3072]);
+  assert.deepEqual(gpu.get(baseSlot - 1), stocks.packFilmStock(calibrated));
+  assert.equal(paths.length, 13);
+});
+
+test('stock loads redraw only previews that looked up a missing slot without waiting', async () => {
+  const { stocks, paths } = filmStockHarness();
+  const notices = [];
+  stocks.onLoad(id => notices.push(id));
+  const id = 'kodak_portra_400';
+  await stocks.request(id, { print_contrast: 64 });
+  assert.deepEqual(notices, []);
+  assert.equal(stocks.slot(id, { print_contrast: 65 }), 0);
+  await stocks.request(id, { print_contrast: 65 });
+  assert.deepEqual(notices, [id]);
+  assert.ok(stocks.slot(id, { print_contrast: 65 }) > 0);
+
+  await stocks.request('fujifilm_velvia_100', { print_contrast: 80, print_paper: 'kodak_2383', lab_levels: true });
+  assert.equal(paths.at(-1), '/api/film-stocks/fujifilm_velvia_100?lab_levels=true');
+  assert.equal(stocks.slot('fujifilm_velvia_100', { print_contrast: -80, lab_levels: true }),
+    stocks.slot('fujifilm_velvia_100', { lab_levels: true }));
+});

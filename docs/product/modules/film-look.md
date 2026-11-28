@@ -1,3 +1,18 @@
+## November 28: Print Contrast reuses stock tables
+
+Grade, Proof and GPU Export use the existing print curve, with the same
+float32 values and the same shader. The renderer loads the stock, paper and
+Lab Levels tables together. Later Print, Shadow or Highlight Contrast values
+fetch only the 256 RGB rows that change (3,072 bytes). CPU rendering keeps
+the same curve calculation. Slides still bypass print contrast. No UI, saved
+grade, image or delivery tolerance changes.
+
+The renderer shares the packed stock/paper/levels arrays among the existing
+eight variant slots, dropping the least recently used variant first. A
+GPU slot uploads its static table on first use or when assigned a different
+base, then only the print rows on another contrast value. Slot counts,
+GPU allocation, and memory shares stay unchanged.
+
 ## November 27: Neutral extreme ideal-scanner white
 
 The ideal Neutral scanner now saturates any scanned pixel with a channel above

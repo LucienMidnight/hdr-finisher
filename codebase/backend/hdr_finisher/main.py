@@ -33,7 +33,9 @@ from .config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, DOCS_DIR,
 from .desktop_security import DesktopPathGrants, secret_matches
 from .exporters import ExportOverwriteRequired, build_export_backends, denoise_settings_for_export
 from .export_presets import SUFFIXES as _EXPORT_SUFFIXES
-from .film_stock import available_film_stocks, film_stock_path, read_film_stock_payload, controlled_stock_payload
+from .film_stock import (
+    available_film_stocks, film_stock_path, read_film_stock_payload, controlled_stock_payload, stock_print_curves,
+)
 from .folder_picker import pick_directory
 from .loader import LoaderError
 from .media_browser import MediaBrowserError, MediaBrowserInterpretationRequired, MediaBrowserStore
@@ -713,6 +715,18 @@ def api_film_stock(stock_id: str, paper: str | None = None,
     if contrast or shadows or highlights or lab_levels:
         return controlled_stock_payload(stock_id, paper, contrast, shadows, highlights, lab_levels)
     return read_film_stock_payload(path)
+
+
+@app.get("/api/film-stocks/{stock_id}/print-curve")
+def api_film_stock_print_curve(stock_id: str, paper: str | None = None,
+                               contrast: float = Query(0, ge=-100, le=100),
+                               shadows: float = Query(0, ge=-100, le=100),
+                               highlights: float = Query(0, ge=-100, le=100)) -> Response:
+    curves = stock_print_curves(stock_id, paper, contrast, shadows, highlights)
+    if curves is None:
+        raise HTTPException(status_code=404, detail=f"Film stock or paper '{stock_id}' was not found.")
+    return Response(curves.astype("<f4", copy=False).tobytes(),
+                    media_type="application/octet-stream", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/api/session")

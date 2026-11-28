@@ -89,7 +89,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/grade-panel-order.test.js | both lanes interleave the same live sections without losing their identity or fold state | 3 | 0.0093 | unknown |  |
 | tests/grade-paste.test.js | paste selection preserves partial choices and inactive lane values | 18 | 0.036 | unknown |  |
 | tests/grade-preview-settle.test.js | a zoomed tiled edit settles exactly once after edit sync and requests one scope | 14 | 3.3591 | unknown |  |
-| tests/grade-speed.test.js | only interactive and coarse requests reduce grain, never delivery or measurement | 14 | 0.1095 | unknown |  |
+| tests/grade-speed.test.js | only interactive and coarse requests reduce grain, never delivery or measurement | 16 | 0.1095 | unknown |  |
 | tests/grade-tile-reuse.test.js | catch-up reuses tiles when the saved revision is the only change | 6 | 0.0636 | unknown |  |
 | tests/grading-preset-files.test.js | saved grading presets round trip without changing settings | 7 | 0.0106 | unknown |  |
 | tests/grain-route.test.js | the help line appears only when the slower CPU route is used or the method cannot run | 21 | 0.7219 | unknown |  |
@@ -276,7 +276,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/test_extended_formats.py | Checks extended formats behavior and regression contracts. | 95 | 59.5665 | unknown | needs_native_helper; windows_only; pytest.mark.skipif(__import__("hdr_finisher.binaries", fromlist=["resolve_binary"]).resolve_binary("hdrf-jxl-info") is None,                     reason="Structured JPEG XL colour profiles need the native hdrf-jxl-info helper (Windows build only)."); pytest.mark.skipif(os.name != "nt", reason="Windows drive-letter behavior") |
 | tests/test_file_gate.py | The Library's file gate: which files are listed and read (design section 6.9, edge cases F1-F18). | 38 | 1.662 | unknown | windows_only; pytest.mark.skipif(not WINDOWS, reason="Windows file attributes"); pytest.mark.skipif(not WINDOWS, reason="Windows junctions") |
 | tests/test_film_character.py | Stock metadata and saved ownership; rendering equations remain unchanged. | 23 | 0.0683 | unknown |  |
-| tests/test_film_controls.py | Physical paper/development controls; measured source data stays immutable. | 23 | 3.7415 | unknown |  |
+| tests/test_film_controls.py | Physical paper/development controls; measured source data stays immutable. | 31 | 3.7415 | unknown |  |
 | tests/test_film_grain.py | The film grain field: statistics, texture, film types and strip exactness. | 19 | 4.3681 | unknown |  |
 | tests/test_film_stock.py | Checks film stock behavior and regression contracts. | 237 | 12.33 | unknown | Conditional skip: not (REAL_STOCK_DIR / 'kodak_portra_400.json').is_file(); pytest.skip("kodak_portra_400.json has not been baked yet") |
 | tests/test_focus_cached_map.py | Checks focus cached map behavior and regression contracts. | 3 | 0.7316 | unknown |  |

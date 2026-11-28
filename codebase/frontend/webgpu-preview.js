@@ -2270,12 +2270,11 @@
      * The film stock tables the film pass reads (binding 6): each loaded
      * stock in its fixed slot (film-stocks.js). Until one has loaded a small
      * placeholder is bound; FILM_STOCK_SLOT is 0 then, so nothing reads it.
-     * Stock data never changes, so a slot is written once.
+     * A warm slot receives only changed print rows when its base matches.
      */
     filmStockBinding() {
       const stocks = window.HDRFilmStocks;
-      const loaded = stocks?.loadedIds() || [];
-      if (!loaded.length) {
+      if (!stocks?.loadedCount) {
         if (!this.filmStockPlaceholder) {
           this.filmStockPlaceholder = this.device.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE });
         }
@@ -2287,12 +2286,7 @@
         this.filmStockUploads = new Map();
         this.recordAllocation("film-stock", bytes, { slots: stocks.slotCount });
       }
-      for (const id of loaded) {
-        const data = stocks.packedSlot(id);
-        if (this.filmStockUploads.get(id) === data) continue;
-        this.device.queue.writeBuffer(this.filmStockBuffer, stocks.bufferIds.indexOf(id) * stocks.slotFloats * 4, data);
-        this.filmStockUploads.set(id, data);
-      }
+      stocks.writeLoadedSlots(this.device.queue, this.filmStockBuffer, this.filmStockUploads);
       return { buffer: this.filmStockBuffer };
     }
 
