@@ -54,7 +54,7 @@ Strictly cleanup, tuning, hardening and performance optimisation.
 | 2a | afternoon (active) | Wave 1: H (harness), T (tidy-up), R1, R2 | 4 workers |
 | 2b | evening | Wave 2: R3, R4, R5, M1–M3 (review only) while H3 calibrates alone at the end | ≤ 4 at a time |
 | 2c | evening | Wave 3: M4–M6 (review only) | 3 workers |
-| 3 | night, quiet machine | Baseline module audit, serial, one runner, `caffeinate -dimsu`, on AC power | One runner; all others idle |
+| 3 | afternoon (largely done 13:10–15:10) | Baseline module audit, serial, one runner, `caffeinate -dimsu`, on AC power | One runner; all others idle |
 | 4 | night | Triage findings + audit data; optimisation and bug-fix packages (O); re-audit the touched modules (quiet machine again) | Sol high, then runner |
 | 5 | early morning | Integration: full fast checks, focused release check plan; run it if ≤ 75 min, else stop and report | Coordinator |
 | 6 | later, PC | Re-run the audit and the PC confirmations on Windows | After Steve agrees |
@@ -107,7 +107,7 @@ code, and checkable with targeted fast tests. Everything else is recorded as
 | H1 | New test driver `codebase/tests/performance/grade-module-impact.js`, registered in `tests/release/drivers.json` (tier `diagnostic`, area `preview`). Writes `module-impact-v1` JSON (see `docs/technical/audits/README.md`) | done | `279707b5`, `3f1fd3eb`; locked smoke passed (baseline + tone, typical, Fit) |
 | H2 | `codebase/tools/audit-summary.cjs`: merges `findings-<PKG>.jsonl` into `findings.jsonl`, validates both formats, writes the markdown summary (impact matrix, flags, regressions against an earlier run on the same machine) | done | `46672b15`; validated 59 live findings |
 | H4 | Driver corrections from M1–M6 `test` findings (H-c) | done | `603606f5`, `aa369fe9`, `093393e4`; smoke HC/HSL/Color/raw.lens all pixelsChanged, 0 errors; resume verified |
-| H3 | Calibration, machine otherwise idle: `baseline` + `tone` on the typical photo and `film` + `denoise` on the large photo, 2 samples. Proves the JSON, the summary, pixel-change detection and resume; projects the Phase 3 duration | active | Library quick check re-run on a quiet machine: pass (first attempt failed on system memory reserve with three agents running) |
+| H3 | Calibration, machine otherwise idle: `baseline` + `tone` on the typical photo and `film` + `denoise` on the large photo, 2 samples. Proves the JSON, the summary, pixel-change detection and resume; projects the Phase 3 duration | done | Library quick check re-run on a quiet machine: pass (first attempt failed on system memory reserve with three agents running) ; calibration projected ~3.4 h |
 
 H1 requirements:
 
@@ -189,6 +189,12 @@ it, and a re-audit of the affected modules.
 
 | ID | Source finding(s) | Scope | Status | Result |
 | --- | --- | --- | --- | --- |
+| O1 | C-1, C-3, M5-2/3/5/9/12, R5-9 | Film Look makes upstream edits and Denoise toggles cost seconds | planning | |
+| O2 | C-2, M4-6, M5-8, M5-11, R5-3, R5-11, M2-9 | GPU memory growth at 100% past the 4 GB ceiling | planning | |
+| O3 | C-4, M1-5/9/11/12/15/16 | RAW setting changes 3–7 s | planning | |
+| O4 | C-5, M3-6, M3-9, R5-5 | Highlight Compression +0.4 s settle on Tone edits | todo | |
+| O5 | C-6, M4-3, M4-4, M3-5, M3-10 | HSL drag lag and panel redraw work | todo | |
+| O6 | M3-13, M5-11, R4-13, R2-12, M6-13, M6-14, R3-12 | Hardening that does not change output | todo | |
 
 ## Audit plan (Phase 3)
 
