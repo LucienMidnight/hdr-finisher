@@ -5082,13 +5082,14 @@
       "suite": "python",
       "area": "library",
       "purpose": "Checks library metadata behavior and regression contracts.",
-      "test_count": 7,
+      "test_count": 8,
       "seconds": {
         "windows": 0.0745,
         "mac": null
       },
       "markers": [
-        "parametrize"
+        "parametrize",
+        "serial"
       ],
       "requirements": [],
       "platform_notes": []
@@ -5417,14 +5418,22 @@
       "suite": "python",
       "area": "library",
       "purpose": "Checks library startup logging behavior and regression contracts.",
-      "test_count": 2,
+      "test_count": 3,
       "seconds": {
         "windows": 0.0466,
         "mac": null
       },
-      "markers": [],
-      "requirements": [],
-      "platform_notes": []
+      "markers": [
+        "posix_only",
+        "serial",
+        "skipif"
+      ],
+      "requirements": [
+        "posix_only"
+      ],
+      "platform_notes": [
+        "pytest.mark.skipif(os.name != \"posix\", reason=\"POSIX named semaphore check\")"
+      ]
     },
     {
       "file": "tests/test_library_stopwatch.py",

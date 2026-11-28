@@ -2,7 +2,7 @@ from concurrent.futures import CancelledError
 from PIL import Image
 import pytest
 from PIL.TiffImagePlugin import IFDRational
-from hdr_finisher.library_metadata import FACT_FIELDS, read_metadata
+from hdr_finisher.library_metadata import FACT_FIELDS, close_readers, read_metadata
 
 
 def test_capture_date_from_existing_reader_and_no_source_writes(tmp_path):
@@ -19,6 +19,26 @@ def test_capture_date_from_existing_reader_and_no_source_writes(tmp_path):
     assert all(record[name] is None for name in FACT_FIELDS if name != "capture_time")
     assert path.read_bytes() == original
     assert len(list(tmp_path.iterdir())) == 1
+
+
+@pytest.mark.serial
+def test_parallel_metadata_matches_direct_reads_in_input_order(tmp_path):
+    paths = []
+    for index in (2, 1):
+        path = tmp_path / f"photo-{index}.jpg"
+        exif = Image.Exif()
+        exif[34665] = {36867: f"2024:02:0{index} 04:05:06"}
+        Image.new("RGB", (16, 8)).save(path, exif=exif)
+        paths.append(path)
+    try:
+        direct = read_metadata(paths)
+        parallel = read_metadata(paths, parallel=True)
+    finally:
+        close_readers()
+    assert [record["capture_time"] for record in parallel["photos"]] == [
+        "2024-02-02T04:05:06", "2024-02-01T04:05:06",
+    ]
+    assert parallel == direct
 
 
 def test_missing_invalid_dates_and_cancel(tmp_path):
