@@ -47,7 +47,11 @@ function createSplashWindow({ BrowserWindow, app, icon, isShuttingDown, onVisibl
     if (!closing && !isShuttingDown?.()) event.preventDefault();
   });
   void window.loadFile(path.join(__dirname, "..", "splash", "splash.html"), { query: { version: app.getVersion() } })
-    .catch(() => {});
+    .catch(error => {
+      if (!closing && !window.isDestroyed() && !isShuttingDown?.()) {
+        console.warn("Could not load the startup splash:", error.message);
+      }
+    });
   return {
     window,
     isOpen: () => !window.isDestroyed(),
