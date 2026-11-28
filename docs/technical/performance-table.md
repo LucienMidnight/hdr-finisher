@@ -1,3 +1,37 @@
+## November 28, 2026 — Mac Library memory capture with other apps open
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794, 4 GB default app ceiling, v0.9.4 code
+with parent `0e9f63c4` (documentation only since the release). Two fresh plain
+Electron profiles, each under the shared GPU lock, with the installed app closed.
+T3 Code, Safari and Notes left open. Read-only curated RAWs reused by hard link,
+with disposable copies of their grades. Independent app census and macOS
+pressure/availability sampled every ~0.25 s, other app footprints once a second.
+
+| Action | Screen wait | Admission and memory |
+| --- | --- | --- |
+| Show `_DSC7970.ARW` alone | 3.15 s grid request to display | No queue, 2.75 s admitted work. macOS was normal at admission (3.95 GB available) and changed to warning near the end of development. |
+| Open a cold three-RAW grid | DSC00264: 1.53 s; _DSC7970: 26.24 s; DSC04375 not shown in 45 s | DSC00264 started immediately. _DSC7970 queued 23.51 s and ran for 2.42 s. macOS was at warning for 88 of 93 samples during that wait (median reported availability 2.25 GB). It returned to normal near admission (4.04 GB). DSC04375 stayed behind the system reserve until the scenario stopped its request at 45.03 s. |
+
+The batch began at normal pressure and switched to warning 1.11 s after the
+folder opened. HDRF's observed process-tree peak was 2.15 GB, below its 4 GB
+ceiling. The other measured footprints stayed steady through the delayed
+picture: T3 Code and its non-test children 1.26–1.29 GB, Safari's own processes
+0.21 GB, Notes 0.04 GB, and WebKit services 0.89 GB (not attributed to a single
+app). The 1.72 GB source estimate needs at least 3.72 GB before other outstanding
+reservations. DSC04375's 2.41 GB estimate needs at least 4.41 GB, more than was
+observed even at normal pressure. When macOS reports warning, HDRF switches
+from normal-pressure pageable headroom to the conservative Mach reading. The
+jump between those readings is not a direct change in the number of free bytes.
+
+Both harnesses observed available memory below the 2 GB reserve and failed that
+check. Batch coverage was 2/3, with no visibility failure. This reproduces real
+system pressure and app-side admission, not a GPU stall or a measured spike in
+another app. The batch is not a controlled reproduction of the earlier 42 s
+installed wait. No artificial load, code or policy change. Evidence is in
+`codebase/output/quick-library-check/mac-thumbnail-stall-{single,batch}-1128/`
+(`backend.log`, `memory.jsonl`, `system-memory.jsonl`, `report.json`). The single
+run's per-app footprint grouping was not used because it included test children.
+
 ## November 28, 2026 — v0.9.4 installed Mac Library log review
 
 One live session of the installed `v0.9.4` (`3d585bee`) on the MacBook Neo,
