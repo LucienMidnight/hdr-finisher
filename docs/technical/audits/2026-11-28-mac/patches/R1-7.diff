@@ -1,0 +1,84 @@
+diff --git a/codebase/desktop/main.js b/codebase/desktop/main.js
+--- a/codebase/desktop/main.js
++++ b/codebase/desktop/main.js
+@@ -844,7 +844,10 @@
+     return choosePhotoTransition(options.actionLabel);
+   });
+   handle("desktop:complete-photo-close", (allowed) => {
+-    if (allowed !== true && mainWindow?.pendingCloseAfterSave) mainWindow.pendingCloseAfterSave = false;
++    if (allowed !== true) {
++      if (mainWindow?.pendingCloseAfterSave || mainWindow?.pendingSidecarClose) quitRequested = false;
++      if (mainWindow?.pendingCloseAfterSave) mainWindow.pendingCloseAfterSave = false;
++    }
+     if (!mainWindow?.pendingSidecarClose) return false;
+     mainWindow.pendingSidecarClose = false;
+     if (allowed !== true) return false;
+@@ -1320,7 +1323,11 @@
+       return false;
+     },
+   });
+-  if (!allowed) return;
++  if (!allowed) {
++    // A Save command completes via IPC; Cancel has no later acknowledgement.
++    if (!mainWindow?.pendingCloseAfterSave) quitRequested = false;
++    return;
++  }
+   if (quitRequested) beginShutdown();
+   else {
+     forceClose = true;
+diff --git a/codebase/desktop/tests/photo-close.test.js b/codebase/desktop/tests/photo-close.test.js
+--- a/codebase/desktop/tests/photo-close.test.js
++++ b/codebase/desktop/tests/photo-close.test.js
+@@ -4,7 +4,7 @@
+ const path = require('node:path');
+ const vm = require('node:vm');
+ 
+-function setupClose(window) {
++function setupClose(window, quit = {}) {
+   const source = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+   const start = source.indexOf('function registerIpc()');
+   const end = source.indexOf('function updateWindowDocumentState()', start);
+@@ -12,7 +12,7 @@
+   const context = vm.createContext({
+     ipcMain: { handle: (name, callback) => handlers.set(name, callback), on() {} },
+     validateSender: () => ({role:'main'}), mainWindow: window,
+-    quitRequested:false, forceClose:false,
++    quitRequested:quit.requested || false, forceClose:false, beginShutdown:quit.shutdown,
+     documentState:{}, safeSuggestedName:value=>value, updateWindowDocumentState(){},
+   });
+   vm.runInContext(source.slice(start, end) + '\nregisterIpc();', context);
+@@ -58,3 +58,34 @@
+     assert.deepEqual(answers,outcome==='saved'?[]:[false]);
+   });
+ }
++
++test('a cancelled quit does not turn a later ordinary window close into app shutdown', async () => {
++  let closes = 0, shutdowns = 0;
++  const mainWindow = { close: () => closes++ };
++  const context = vm.createContext({
++    quitRequested: true, forceClose: false, mainWindow, windowFailure: null,
++    documentState: { dirty: true }, choosePhotoTransition: () => 'cancel',
++    leaveCurrentPhoto: require('../../frontend/photo-transition').leaveCurrentPhoto,
++    beginShutdown: () => shutdowns++,
++  });
++  const source = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
++  vm.runInContext(source.slice(source.indexOf('async function requestClose()'),
++    source.indexOf('async function beginShutdown()')), context);
++  await context.requestClose();
++  assert.equal(closes, 0);
++  context.documentState.dirty = false;
++  await context.requestClose();
++  assert.equal(closes, 1);
++  assert.equal(shutdowns, 0);
++});
++
++test('a cancelled sidecar quit does not turn the next close into app shutdown', async () => {
++  let closes = 0, shutdowns = 0;
++  const window = { pendingSidecarClose: true, close: () => closes++ };
++  const complete = setupClose(window, { requested: true, shutdown: () => shutdowns++ });
++  await complete(false);
++  window.pendingSidecarClose = true;
++  await complete(true);
++  assert.equal(closes, 1);
++  assert.equal(shutdowns, 0);
++});
