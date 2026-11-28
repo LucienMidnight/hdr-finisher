@@ -1,9 +1,8 @@
 // Film grain: the WebGPU preview matches the CPU export.
 //
-// The shader gathers the grains around each pixel; film_grain.py splats each
-// grain onto its pixels. Both hash the same cells in u32, draw the same grain
-// counts, positions, radii and sensitivities, and normalise by the same
-// closed-form statistics, so they should differ only by float rounding. This
+// The GPU gathers the analytic box-filter weights while the CPU applies
+// them in horizontal and vertical passes. They hash the same nodes and
+// apply the same tonal calibration, up to float rounding. The test
 // renders one picture through both and asks how much grain adds to their
 // disagreement: the difference with grain on, less the difference with grain
 // off, which is the rest of the graph's own GPU/CPU gap. The grain view map
