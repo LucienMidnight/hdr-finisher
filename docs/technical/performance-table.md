@@ -1,3 +1,30 @@
+## November 28, 2026 — Mac Library thumbnail reservation, paired repair test
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794, v0.9.4 app code at `2bf59b84`
+(only documentation since release). One curated DSC04375.ARW in a fresh grid
+and disposable profile per run, installed app closed, GPU lock held. The
+control kept the same grade apart from emptying the disposable repair list.
+Independent physical-footprint census at ~0.25 s measures increments within
+each run, not exact allocations or a safe replacement budget.
+
+| Recipe | Grid request to picture | Memory |
+| --- | --- | --- |
+| Original seven saved repairs | Not shown in 27 s, never admitted; cancelled at 27.09 s | 2.405 GB job estimate plus 2 GB system reserve versus 4.04–4.29 GB available after the folder opened. The census never saw the repair work run. No system-reserve breach. |
+| Same grade without repairs | 1.43 s, no queue; admitted source work 1.04 s | 1.724 GB job estimate versus 1.410 GB sampled app-footprint increase (0.692 → 2.102 GB), and GPU job peak 1.211 GB versus its 1.424 GB GPU lease. The picture passed coverage, but the harness observed available RAM below the unchanged 2 GB reserve after admission. |
+
+A saved repair uses the 48-byte/photosite complex GPU reservation, compared
+with 32 for this same source without repairs. The 0.681 GB increase comes
+entirely from that rule, not file size. Replaying the production scheduler
+with the observed grants, 4.29 GB available reproduces `system reserve` for
+the repaired job. An idle synthetic 4.50 GB supply clears system admission
+but still gives `GPU memory`: the job's 2.110 GB GPU requirement plus 93.3 MB
+of draw headroom exceeds the observed 2 GiB GPU budget by 55.8 MB, even with
+zero external GPU work. The no-repair request admits with the same settings.
+This is a scheduler result, not a measurement of repaired GPU allocations.
+No reserve, budget, admission policy, app code or original photo/grade changed.
+Focused scheduler tests: 52 passed. Evidence: `codebase/output/quick-library-check/mac-thumb-reservation-{repair,plain}-1128/`
+(`backend.log`, `memory.jsonl`, `report.json` and `repair`'s `scheduler-replay.json`).
+
 ## November 28, 2026 — Mac Library memory capture with other apps open
 
 MacBook Neo, A18 Pro, 8 GB, 1408×794, 4 GB default app ceiling, v0.9.4 code
