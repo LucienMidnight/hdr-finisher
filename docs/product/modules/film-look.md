@@ -1,3 +1,17 @@
+## November 28: Fast Film Grain
+
+Grain keeps its place between Halation and the stock's print/scan response.
+Colour still has three dye layers and black-and-white has one silver layer.
+The seed and emulsion spacing still place the grain on the full picture.
+An analytic pixel-area filter now averages that field instead of simulating
+separate grains at each of up to 16 sample positions. This deliberately
+changes the exact specks in existing grades, including saved test projects.
+The Film Grain stage no longer draws a different sample budget during a
+drag. CPU fallback, Direct, Tiled, Proof and export use the same design.
+No new caches or GPU textures are retained. CPU work still yields between
+bounded scratch blocks. Visual sign-off and measured application acceptance
+remain open under the fast Film Look brief.
+
 ## November 28: Print Contrast reuses stock tables
 
 Grade, Proof and GPU Export use the existing print curve, with the same

@@ -23,38 +23,35 @@ def _grain_log(level: float, film_type: str = "color_negative", *, chroma: float
     return np.log2(grained / np.float32(level))
 
 
-def _spike_over_ring(field: np.ndarray) -> float:
-    """The tallest spectral peak against the average power at its frequency."""
-    spectrum = np.abs(np.fft.fftshift(np.fft.fft2(field - field.mean()))) ** 2
-    centre = spectrum.shape[0] // 2
-    yy, xx = np.indices(spectrum.shape)
-    radius = np.hypot(yy - centre, xx - centre).astype(int)
-    ring = np.bincount(radius.ravel(), spectrum.ravel()) / np.maximum(np.bincount(radius.ravel()), 1)
-    ratio = spectrum / np.maximum(ring[radius], 1e-30)
-    ratio[radius < 3] = 0.0
+def _spectral_spike(field: np.ndarray) -> float:
+    """A narrow spectral peak compared with its local spectral floor."""
+    # The tent falls off faster along the axes than the diagonals near
+    # Nyquist. Compare with nearby bins rather than dilute the expected
+    # energy across a whole ring. A repeat still shows as a narrow peak.
+    window = np.hanning(field.shape[0])[:, None] * np.hanning(field.shape[1])[None, :]
+    spectrum = np.abs(np.fft.fftshift(np.fft.fft2((field - field.mean()) * window))) ** 2
+    wrapped = np.pad(spectrum, 6, mode="wrap")
+    neighbours = np.lib.stride_tricks.sliding_window_view(wrapped, (13, 13)).mean(axis=(-1, -2))
+    ratio = spectrum / np.maximum(neighbours, 1e-30)
+    centre = field.shape[0] // 2
+    ratio[centre - 2:centre + 3, centre - 2:centre + 3] = 0
     return float(ratio.max())
 
 
-@pytest.mark.parametrize("film_type", ["color_negative", "black_and_white"])
-@pytest.mark.parametrize("softness", [0.0, 0.25, 1.0])
-def test_closed_form_coverage_matches_the_simulated_field(film_type: str, softness: float) -> None:
-    # Normalisation divides by these, so they must describe the field itself.
-    kind = film_grain.film_type(film_type)
-    flat = film_grain.FilmType(kind.layers, kind.opacity, 0.0, kind.edge_hard)  # no mottle: stationary
-    edge = film_grain.edge_start(kind, softness)
-    for level in (0.05, 0.5, 0.95):
-        signal = np.full((320, 320), level, dtype=np.float32)
-        coverage = film_grain.layer_coverage(signal, 3000, 2000, 4.0, 271828, kind.layers[0], flat, edge)
-        mean, spread = film_grain.coverage_statistics(film_grain.develop_level(np.float64(level)), flat, edge)
-        assert float(coverage.mean()) == pytest.approx(float(mean), abs=0.01)
-        assert float(coverage.std()) == pytest.approx(float(spread), rel=0.03)
+@pytest.mark.parametrize("pitch", [0.07, 0.5, 1.3, 6.2])
+def test_box_filter_matches_averaging_aligned_finer_pixels(pitch: float) -> None:
+    # A wider pixel averages the very same field, including at Fit.
+    seeded = film_grain.seed_hash(271828, 239)
+    coarse = film_grain._layer_features(8, 14, 24, 31, np.float32(pitch), seeded)
+    finer = film_grain._layer_features(24, 42, 72, 93, np.float32(3 * pitch), seeded)
+    np.testing.assert_allclose(coarse, finer.reshape(24, 3, 31, 3, 2).mean(axis=(1, 3)), atol=3e-5)
 
 
 @pytest.mark.parametrize("level", [0.05, 0.5, 0.85])
 def test_grain_has_no_repeating_pattern(level: float) -> None:
     # White noise measures about 12 here; the first grain's sine hash
     # measured about 95 at every level, which is what showed as tiling.
-    assert _spike_over_ring(_grain_log(level, size=512)[..., 1]) < 25.0
+    assert _spectral_spike(_grain_log(level, size=512)[..., 1]) < 25.0
 
 
 def test_amount_keeps_the_first_grains_strength_at_mid_grey() -> None:
@@ -87,19 +84,20 @@ def test_black_and_white_is_a_different_field_from_color_negative() -> None:
     assert abs(float(np.corrcoef(mono.ravel(), colour.ravel())[0, 1])) < 0.2
 
 
-@pytest.mark.parametrize("pitch", [1.0, 2.7, 9.3])
-def test_strips_and_tiles_render_the_same_grain_bit_for_bit(pitch: float) -> None:
-    kind = film_grain.film_type("color_negative")
-    signal = np.random.default_rng(3).random((300, 257)).astype(np.float32)
-    whole = film_grain.layer_coverage(signal, 40, 90, pitch, 7, kind.layers[0], kind, 0.6)
-    rows = np.vstack([
-        film_grain.layer_coverage(signal[a:b], 40, 90 + a, pitch, 7, kind.layers[0], kind, 0.6)
-        for a, b in ((0, 37), (37, 170), (170, 300))
-    ])
-    cols = np.hstack([
-        film_grain.layer_coverage(signal[:, a:b], 40 + a, 90, pitch, 7, kind.layers[0], kind, 0.6)
-        for a, b in ((0, 100), (100, 257))
-    ])
+@pytest.mark.parametrize("scale", [0.15, 0.52, 1.0])
+def test_strips_and_tiles_render_the_same_grain_bit_for_bit(scale: float) -> None:
+    state = AdjustmentState()
+    look = state.sdr.film_look
+    look.grain_amount, look.grain_size, look.grain_chroma = 70, 75, 50
+    signal = np.random.default_rng(3).random((200, 157, 3), dtype=np.float32)
+    def render(y, x):
+        return _apply_film_look(signal[y, x], state, PreviewKind.SDR,
+            frame_window=FrameWindow(1500 + (x.start or 0), 2500 + (y.start or 0), *FRAME),
+            source_pixel_scale=scale)
+    all_pixels = slice(None)
+    whole = render(all_pixels, all_pixels)
+    rows = np.vstack([render(slice(a, b), all_pixels) for a, b in ((0, 37), (37, 170), (170, 200))])
+    cols = np.hstack([render(all_pixels, slice(a, b)) for a, b in ((0, 100), (100, 157))])
     np.testing.assert_array_equal(rows, whole)
     np.testing.assert_array_equal(cols, whole)
 
@@ -121,24 +119,14 @@ def test_threaded_row_chunks_match_a_single_pass() -> None:
     np.testing.assert_array_equal(chunked, single)
 
 
-def test_hash_matches_the_shader_u32_arithmetic() -> None:
-    # Reference values from the lowbias32 mix the shader runs in u32.
-    def mix(x: int) -> int:
-        x &= 0xFFFFFFFF
-        x ^= x >> 16
-        x = (x * 0x7FEB352D) & 0xFFFFFFFF
-        x ^= x >> 15
-        x = (x * 0x846CA68B) & 0xFFFFFFFF
-        x ^= x >> 16
-        return x
-
-    seed, salt = 2_000_000_123, 223
-    seeded = mix((seed + salt * 0x9E3779B9) & 0xFFFFFFFF)
-    assert int(film_grain.seed_hash(seed, salt)) == seeded
-    cell = mix(mix(seeded ^ (-1 & 0xFFFFFFFF)) ^ 5)
-    assert int(film_grain.cell_hash(np.array([-1]), np.array([5]), np.uint64(seeded))[0]) == cell
-    draw = (mix((cell + 3 * 0x85EBCA6B) & 0xFFFFFFFF) >> 8) / 16777216.0
-    assert float(film_grain.uniform(np.array([cell], dtype=np.uint64), 3)[0]) == draw
+def test_full_seed_changes_the_field_without_moving_it() -> None:
+    first = film_grain.seed_hash(271828, 223)
+    second = film_grain.seed_hash(271828 + (1 << 16), 223)
+    def draw(key):
+        return film_grain._layer_features(2000, 3000, 128, 128, np.float32(0.63), key)[..., 0]
+    a, b = draw(first), draw(second)
+    np.testing.assert_array_equal(draw(first), a)
+    assert abs(float(np.corrcoef(a.ravel(), b.ravel())[0, 1])) < 0.05
 
 
 def test_hdr_and_sdr_develop_the_same_grain() -> None:

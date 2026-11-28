@@ -857,8 +857,8 @@
       "file": "tests/grade-speed.test.js",
       "suite": "node",
       "area": "grade",
-      "purpose": "only interactive and coarse requests reduce grain, never delivery or measurement",
-      "test_count": 16,
+      "purpose": "scheduled coarse requests reach the renderer without downgrading settled requests",
+      "test_count": 15,
       "seconds": {
         "windows": 0.1095,
         "mac": null
@@ -3744,7 +3744,7 @@
       "suite": "python",
       "area": "film",
       "purpose": "The film grain field: statistics, texture, film types and strip exactness.",
-      "test_count": 19,
+      "test_count": 17,
       "seconds": {
         "windows": 4.3681,
         "mac": null
@@ -4131,7 +4131,7 @@
       "file": "tests/test_grain_work.py",
       "suite": "python",
       "area": "grain",
-      "purpose": "Cancellation and exact grain output from baseline 88775059.",
+      "purpose": "Film Grain cancellation, priority and deterministic output.",
       "test_count": 13,
       "seconds": {
         "windows": 6.0651,
