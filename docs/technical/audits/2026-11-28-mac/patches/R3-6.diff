@@ -1,0 +1,85 @@
+diff --git a/codebase/frontend/edit-commands.js b/codebase/frontend/edit-commands.js
+index 68850cb3..61f69227 100644
+--- a/codebase/frontend/edit-commands.js
++++ b/codebase/frontend/edit-commands.js
+@@ -79,6 +79,9 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
+       ? queueEditCommand(commandType, payload, targetId, { refreshPreview, globalEditGeneration, historyGroup, isCurrent })
+       : false);
+   }
++  // Retouch changes repairs/source, not the global adjustment values. A
++  // slider edit that arrives while it is queued or rendering owns those.
++  const adjustmentGeneration = commandType === "set_repairs" ? state.globalEditGeneration : globalEditGeneration;
+   state.editCommandQueue = (state.editCommandQueue || Promise.resolve()).then(async () => {
+     if (!sessionId || state.session?.session_id !== sessionId || !isCurrent()) return false;
+     const response = await fetch(`/api/session/${state.session.session_id}/edit-commands`, {
+@@ -99,9 +102,6 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
+     const optimisticLocals = (state.localMaskCommitDepth > 0 || state.localPointerGesture)
+       ? state.editDocument?.local_adjustments
+       : null;
+-    const preserveNewerGlobalEdit = globalEditGeneration !== null
+-      && globalEditGeneration !== state.globalEditGeneration;
+-    const optimisticAdjustments = preserveNewerGlobalEdit ? state.adjustments : null;
+     const draftGeometry = geometryDraftActive() ? state.adjustments.shared.geometry : null;
+     const previousGeometrySignature = geometrySignature();
+     const shownInputs = refreshPreview === "if-changed"
+@@ -131,6 +131,9 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
+     }
+     await resetRepairSource(previousRepairs, result.document, result.source_epoch);
+     if (state.session?.session_id !== sessionId || state.editRevision !== result.revision) return false;
++    const preserveNewerGlobalEdit = adjustmentGeneration !== null
++      && adjustmentGeneration !== state.globalEditGeneration;
++    const optimisticAdjustments = preserveNewerGlobalEdit ? state.adjustments : null;
+     recordAcknowledgedLocals(result.document);
+     if (commandType === "replace_document") loadDenoiseDocument(state.editDocument);
+     if (optimisticLocals) {
+diff --git a/codebase/tests/edit-sync-retry.test.js b/codebase/tests/edit-sync-retry.test.js
+index 97d23ad6..7f218be5 100644
+--- a/codebase/tests/edit-sync-retry.test.js
++++ b/codebase/tests/edit-sync-retry.test.js
+@@ -4,6 +4,46 @@ const { test } = require("node:test");
+ 
+ const { declaration: definition, declarations } = require("./frontend-source.js");
+ 
++test("a Retouch acknowledgement cannot overwrite a slider edit made during source refresh", async () => {
++  const sourceRefresh = Promise.withResolvers(), refreshStarted = Promise.withResolvers();
++  const initial = { hdr: { exposure: 0 }, sdr: {} };
++  const state = { session: { session_id: "photo" }, currentView: "hdr", editRevision: 1,
++    adjustments: structuredClone(initial), editDocument: { global_adjustments: initial, repairs: [] },
++    globalEditGeneration: 0, globalEditDirty: false };
++  const requests = [];
++  const context = vm.createContext({
++    state, window: {}, console,
++    geometryDraftActive: () => false, geometrySignature: () => "frame",
++    stablePreviewJson: JSON.stringify,
++    resetRepairSource: async () => {
++      if (requests.length === 1) {
++        refreshStarted.resolve();
++        await sourceRefresh.promise;
++      }
++    },
++    recordAcknowledgedLocals() {}, renderLocalAdjustments() {}, syncProjectBadge() {},
++    updateExportAvailability() {}, invalidatePreview() {}, debouncePreview() {},
++    status: { get() {} }, safeJson: response => response.json(),
++    fetch: async (_url, { body }) => {
++      const command = JSON.parse(body).commands[0];
++      requests.push(command);
++      return { ok: true, json: async () => ({ revision: command.expected_revision + 1, dirty: true,
++        document: { global_adjustments: structuredClone(command.payload.adjustments || initial), repairs: [{ id: "repair" }] } }) };
++    },
++  });
++  vm.runInContext(declarations("queueEditCommand", "syncGlobalEditState", "markGlobalEditDirty"), context);
++  const repair = context.queueEditCommand("set_repairs", { repairs: [{ id: "repair" }] });
++  await refreshStarted.promise;
++  state.adjustments.hdr.exposure = 0.7;
++  context.markGlobalEditDirty();
++  sourceRefresh.resolve();
++  assert.equal(await repair, true);
++  assert.deepEqual(state.editDocument.repairs, [{ id: "repair" }]);
++  assert.equal(state.adjustments.hdr.exposure, 0.7);
++  assert.equal(await context.syncGlobalEditState(), true);
++  assert.equal(requests[1].payload.adjustments.hdr.exposure, 0.7);
++});
++
+ for (const operation of ["refreshScopes()", 'queueEditCommand("undo")']) {
+   for (const scenario of ["perspective draft", "rejected sync", "deferred sync"]) {
+     test(`${operation} stops retrying with ${scenario}`, async () => {
