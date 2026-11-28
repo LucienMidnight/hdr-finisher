@@ -1,0 +1,992 @@
+/* Grade module audit. Run through run-in-electron.js under the shared GPU lock.
+ * Opens a fresh, disposable Grade session; never saves a photo/project.
+ */
+'use strict';
+
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const crypto = require('node:crypto');
+const { execFileSync, spawn } = require('node:child_process');
+const { once } = require('node:events');
+const { setTimeout: delay } = require('node:timers/promises');
+const { parseArgs } = require('node:util');
+const { MODULES, PROBES, CLOCKS, MEMORY, canonical, recipeHash, stats, impacts,
+  updateNoiseSpread, validateRun } = require('../../tools/audit-summary.cjs');
+const { photosRoot } = require('../helpers/photos-root.cjs');
+
+const PHOTOS = { typical: 'IMG_7723.CR3', large: 'DSC00636.ARW', noisy: 'IMG_0790.CR2' };
+const METHODS = ['clean_grain', 'standard', 'micro_grain'];
+const DRIVE = 'tests/performance/grade-module-impact.js';
+const LIMIT = 120_000;
+const eye = key => `[data-section-path="${key}"]`;
+
+// Seed values live here so the module reviewers can replace them in one place.
+// “$lane” follows the lane flag, except for the HDR source of SDR Match.
+const RECIPES = {
+  baseline: {},
+  'raw.cleanup': { on: { remove_hot_pixels: true, even_out_specks: true, speck_threshold: 2.3 },
+    off: { remove_hot_pixels: false, even_out_specks: false } },
+  'raw.lens': { on: { mode: 'auto', distortion: true, chromatic_aberration: true, vignetting: true },
+    off: { mode: 'off' } },
+  'raw.highlights': { on: { enabled: true, method: 'opposed_color_v1', clipping_threshold: .96 },
+    off: { enabled: false } },
+  denoise: { methods: METHODS, enabled: true },
+  tone: { changes: { '$lane.exposure': .55, '$lane.contrast': .18 } },
+  bands: { band: { adjustment_ev: .8 } },
+  curves: { changes: { '$lane.luma_curve': [[0, 0], [.25, .19], [.5, .58], [.75, .83], [1, 1]] } },
+  highlight_compression: { hdr: { 'hdr.highlight_compression_target_nits': 600,
+    'hdr.highlight_compression_start_nits': 203 }, sdr: { 'sdr.highlight_compression_start_percent': 55 } },
+  color: { changes: { '$lane.saturation': .3, '$lane.tint': 8 } },
+  wheels: { changes: { '$lane.color_grading.shadows.hue': 220, '$lane.color_grading.shadows.saturation': 28,
+    '$lane.color_grading.highlights.hue': 38, '$lane.color_grading.highlights.saturation': 18 } },
+  hsl: { channel: 'red', saturation: 48, hue_shift: 12 },
+  bw: { changes: { '$lane.black_and_white_section_enabled': true, '$lane.black_and_white.reds': 40 } },
+  vignette: { changes: { '$lane.vignette.amount': -45, '$lane.vignette.midpoint': 30 } },
+  detail: { changes: { '$lane.detail.clarity_amount': 35, '$lane.detail.sharpen_amount': 45 } },
+  film: { changes: { '$lane.film_look.film_stock': 'kodak_portra_400', '$lane.film_look.look_strength': .8,
+    '$lane.film_look.lens_filter': 'black_pro_mist', '$lane.film_look.lens_strength': .3,
+    '$lane.film_look.halation_enabled': true, '$lane.film_look.halation_amount': 25,
+    '$lane.film_look.grain_enabled': true, '$lane.film_look.grain_amount': 28 } },
+  local: { locals: [{ type: 'brush', exposure: .8 }, { type: 'linear_gradient', exposure: -.55 }] },
+  retouch: { repairs: [{ source: [.38, .44], destination: [.5, .5] },
+    { source: [.57, .5], destination: [.66, .56] }], size: 128 },
+  geometry: { changes: { 'shared.geometry.crop': { x: .08, y: .08, width: .84, height: .84 },
+    'shared.geometry.straighten_angle': 2, 'shared.geometry.perspective_rotate': 4 } },
+  sdr_match: { changes: { 'hdr.exposure': .35, 'hdr.contrast': .12, 'hdr.saturation': .12 }, action: 'whole' },
+};
+
+const EYES = {
+  tone: '$lane.tone_section_enabled', bands: '$lane.tone_equalizer_section_enabled',
+  curves: 'current.curves_section_enabled', highlight_compression: '$lane.highlight_section_enabled',
+  color: '$lane.color_section_enabled', wheels: 'current.color_grading_section_enabled',
+  hsl: 'current.hsl_section_enabled', bw: 'current.black_and_white_section_enabled',
+  vignette: 'current.vignette_section_enabled', detail: 'current.detail_section_enabled',
+  film: 'current.film_look_section_enabled', local: 'shared.local_adjustments_enabled',
+};
+const RANGE = {
+  tone: ['#$lane-exposure', '#$lane-contrast'], bands: ['#tone-equalizer-band-value'],
+  highlight_compression: ['#$lane-compression-start', '#$lane-compression-softness'],
+  color: ['#$lane-saturation', '#$lane-tint'], wheels: ['[data-path="current.color_grading.blending"]'],
+  hsl: ['#hsl-global-panel [data-hsl-key="saturation"]'], bw: ['#bw-reds'],
+  vignette: ['[data-path="current.vignette.amount"]'], detail: ['#detail-clarity', '#detail-sharpen'],
+  film: ['#film-look-strength', '#film-halation-amount', '#film-grain-amount'],
+  local: ['[data-local-grade="exposure"]'],
+};
+
+const isRaw = id => id.startsWith('raw.');
+const renameLane = (selector, rendition) => selector.replaceAll('$lane', rendition);
+const max = xs => xs.length ? Math.max(...xs) : null;
+const mb = bytes => bytes == null ? null : bytes / 1e6;
+const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
+const shaBuffer = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+async function shaFile(file) {
+  const hash = crypto.createHash('sha256');
+  for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
+  return hash.digest('hex');
+}
+function saveFile(file, value) {
+  const tmp = file + '.tmp';
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n');
+    fs.renameSync(tmp, file);
+  } finally { fs.rmSync(tmp, { force: true }); }
+}
+
+function options(args) {
+  const { values: v } = parseArgs({ args: args.slice(2), options: {
+    all: { type: 'boolean' }, module: { type: 'string' }, photo: { type: 'string', default: 'typical' },
+    zoom: { type: 'string', default: 'fit' }, lane: { type: 'string' },
+    samples: { type: 'string', default: '5' }, warmup: { type: 'string', default: '2' },
+    out: { type: 'string', default: 'output/audits/module-impact' }, resume: { type: 'boolean' },
+    help: { type: 'boolean' },
+  }});
+  if (v.help) return null;
+  if (v.all && v.module) throw Error('Use --module <id>[,<id>...] or --all');
+  const ids = v.all ? [...MODULES] : (v.module || 'baseline').split(',');
+  if (ids.some(id => !MODULES.includes(id)) || new Set(ids).size !== ids.length) throw Error('Unknown or repeated module');
+  if (!['fit', '100'].includes(v.zoom) || (v.lane && !['hdr', 'sdr'].includes(v.lane))) throw Error('Invalid zoom or lane');
+  if (v.lane === 'hdr' && ids.includes('sdr_match')) throw Error('sdr_match must run on the SDR lane');
+  if (!/^\d+$/.test(v.samples) || +v.samples < 1 || !/^\d+$/.test(v.warmup)
+    || ![v.samples, v.warmup].every(x => Number.isSafeInteger(+x))) throw Error('Samples must be positive and warm-ups nonnegative');
+  const over = ids.filter(id => id !== 'baseline');
+  const plan = !ids.includes('baseline') ? ids : [
+    'baseline:start', ...over.slice(0, v.all ? over.indexOf('color') : Math.ceil(over.length / 2)),
+    ...(over.length > 1 ? ['baseline:middle'] : []),
+    ...over.slice(v.all ? over.indexOf('color') : Math.ceil(over.length / 2)),
+    ...(over.length ? ['baseline:end'] : []),
+  ];
+  return { ...v, out: path.resolve(v.out), samples: +v.samples, warmups: +v.warmup, plan };
+}
+
+async function findPhoto(arg) {
+  const role = Object.hasOwn(PHOTOS, arg) ? arg : 'path';
+  const listed = role === 'path' ? null : PHOTOS[role];
+  if (!listed && /\.hdrf(?:-triage)?$/i.test(arg)) throw Error('Use a photo, not a project file.');
+  const original = listed ? path.join(photosRoot(), 'HDR Test Images', listed) : path.resolve(arg);
+  if (!listed) {
+    if (!fs.statSync(original).isFile()) throw Error(`Photo is not a file: ${original}`);
+    return { role, file: path.basename(original), sha256: await shaFile(original), input: original };
+  }
+  const input = path.resolve(require('../../tools/lib/platform.cjs').machineSettings().sharedTestPhotos, listed);
+  fs.mkdirSync(path.dirname(input), { recursive: true });
+  if (!fs.existsSync(input)) {
+    try { fs.copyFileSync(original, input, fs.constants.COPYFILE_EXCL); }
+    catch (error) { if (error.code !== 'EEXIST') throw error; }
+  }
+  const manifest = require('../test-photos.manifest.json');
+  const expected = manifest.files.find(x => x.name === listed)?.sha256;
+  const digest = await shaFile(input);
+  if (expected && expected !== digest) throw Error(`Reusable test copy does not match the photo manifest: ${input}`);
+  return { role, file: listed, sha256: digest, input };
+}
+
+function sampler() {
+  const child = spawn(require('../../tools/lib/platform.cjs').pythonExecutable(),
+    [path.resolve('tools/measure-library-processes.py'), process.env.HDR_FINISHER_ELECTRON_MAIN_PID, '0.2'],
+    { stdio: ['ignore', 'pipe', 'pipe'] });
+  let buffer = '';
+  const rows = [], errors = [];
+  child.stdout.on('data', chunk => {
+    buffer += chunk;
+    let newline;
+    while ((newline = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, newline);
+      buffer = buffer.slice(newline + 1);
+      try { rows.push(JSON.parse(line)); } catch { errors.push(`Bad memory census: ${line}`); }
+      if (rows.length > 1500) rows.shift();
+    }
+  });
+  child.stderr.on('data', bytes => errors.push(String(bytes).trim()));
+  child.on('error', error => errors.push(error.message));
+  const closed = once(child, 'close').catch(() => {});
+  return {
+    async baseline() {
+      const started = Date.now();
+      while (!rows.some(r => r.at >= started) && Date.now() - started < 3500 && child.exitCode === null) await delay(30);
+      return rows.find(r => r.at >= started) || null;
+    },
+    summarize(before, until, roles, allocator) {
+      const start = before?.at ?? -Infinity;
+      const samples = before ? rows.filter(r => r.at >= start && r.at <= until) : [];
+      const electrons = new Map(roles.map(p => [p.pid, p.type]));
+      const charge = (row, role) => {
+        const matches = row.processes.filter(p => {
+          const type = electrons.get(p.pid);
+          if (role === 'renderer') return type === 'Tab' || type === 'Renderer' || /helper \(renderer\)/i.test(p.name);
+          if (role === 'gpu') return type === 'GPU' || /helper \(gpu\)/i.test(p.name);
+          return !type && /(?:python|hdr.finisher.backend)/i.test(p.name);
+        });
+        return matches.length ? matches.reduce((n, p) => n + p.chargedBytes, 0) : null;
+      };
+      const peak = role => mb(max(samples.map(r => charge(r, role)).filter(Number.isFinite)));
+      return { footprint_baseline: mb(before?.totalBytes), footprint_peak: mb(max(samples.map(r => r.totalBytes))),
+        renderer_peak: peak('renderer'), backend_peak: peak('backend'), gpu_process_peak: peak('gpu'),
+        webgpu_allocator_peak: mb(allocator) };
+    },
+    errors,
+    async stop() { child.kill(); await closed; },
+  };
+}
+
+// This runs in the disposable renderer. A queue fence is paired with both
+// the accepted frame and its generation, so a superseded frame cannot win.
+function installObserve() {
+  const audit = window.__moduleAudit = { overlayNotBefore: 0, background: 0 };
+  const debounce = debounceOverlayAndScopes;
+  debounceOverlayAndScopes = function (...args) {
+    audit.overlayNotBefore = performance.now() + 120;
+    return debounce.apply(this, args);
+  };
+  const scopes = refreshScopes;
+  refreshScopes = async function (...args) {
+    audit.background++;
+    try { return await scopes.apply(this, args); } finally { audit.background--; }
+  };
+  const overlay = refreshOverlay;
+  refreshOverlay = async function (...args) {
+    audit.background++;
+    try { return await overlay.apply(this, args); } finally { audit.background--; }
+  };
+  audit.stable = drain => {
+    const lane = state.currentView, a = state.acceptedPresentation, c = state.renderCoordinator?.state(lane);
+    const scheduler = state.previewScheduler;
+    return !state.importInProgress && !state.gradeOpen && !state.rawRedevelopGeneration
+      && a?.exact && a.processedLongEdge === requiredProcessingLongEdge()
+      && scopePresentationMatches(a, lane) && viewerState().status === 'ready'
+      && !state.gpuDraftInFlight && !state.globalEditSyncPending && !state.denoiseInputQueue?.running
+      && !['preparing', 'recalculating'].includes(state.denoiseRuntime[lane]?.status) && !retouchUI.busy
+      && !state.zoomRefinementTimer && !state.zoomRefinementInFlight
+      && !scheduler?.frameInFlight && !scheduler?.framePending && scheduler?.frame == null
+      && c?.inFlight?.priority !== 'foreground' && c?.pending?.priority !== 'foreground'
+      && (!drain || (!c?.inFlight && !c?.pending && !c?.panTimerPending && !c?.catchUpTimerPending
+        && !state.zoomScopeTimer && !state.scopeRegionRefreshTimer && !state.gpuScopeRequestInFlight
+        && !state.pendingGpuScopeRequest && !state.scopeRequestInFlight && !state.pendingScopeRequest
+        && !state.gpuPreview?.activeScopeCount && !state.gpuPreview?.activeRenderCount && !geometryUnderlayerTask
+        && !pendingHighlightAnchors.size && !exactHighlightAnchorInflight.size
+        && !audit.background && performance.now() >= audit.overlayNotBefore));
+  };
+  audit.allocator = () => window.HDRFinisherPerformance.gpuSnapshot()?.resources?.memory?.allocator?.usedBytes ?? null;
+  audit.bump = record => {
+    const now = audit.allocator();
+    if (now !== null) record.allocator = Math.max(record.allocator ?? 0, now);
+  };
+  function frame(accepted, fenced) {
+    const record = audit.step;
+    if (!record || record.firstAt === null || !accepted) return;
+    const row = { accepted, fenced, completedAt: null, currentAtCompletion: false };
+    record.frames.push(row);
+    const done = () => requestAnimationFrame(() => {
+      row.completedAt = performance.now();
+      row.currentAtCompletion = state.acceptedPresentation === accepted && scopePresentationMatches(accepted, state.currentView);
+      if (audit.step === record) audit.bump(record);
+    });
+    if (fenced) void state.gpuPreview.device.queue.onSubmittedWorkDone().then(done, error => record.errors.push(String(error)));
+    else done(); // CPU exact timing is still observable, but not GPU first feedback.
+  }
+  addEventListener('hdrfinisher:preview-presented', event => {
+    const a = state.acceptedPresentation, e = event.detail;
+    if (a?.transport === 'WebGPU' && a.sourceSerial === e.sourceSerial && a.generation === e.generation
+      && a.sessionId === e.sessionId && a.lane === e.lane) frame(a, true);
+  });
+  const accept = acceptPresentation;
+  acceptPresentation = function (...args) {
+    const result = accept.apply(this, args);
+    if (state.acceptedPresentation?.transport !== 'WebGPU') frame(state.acceptedPresentation, false);
+    return result;
+  };
+  const relevant = (event, record) => event.target instanceof Element && event.target.closest(record.selector);
+  document.addEventListener('input', event => {
+    const r = audit.step;
+    if (r && relevant(event, r) && r.firstAt === null) r.firstAt = performance.now();
+  }, true);
+  document.addEventListener('pointerup', event => {
+    const r = audit.step;
+    if (!r || !event.isTrusted || r.releaseAt !== null) return;
+    if (r.type !== 'click' || relevant(event, r)) r.releaseAt = performance.now();
+    // Canvas controls (Curves) have no DOM input. Use their first real
+    // pointer change, not pointerdown, as the equivalent input event.
+  }, true);
+  document.addEventListener('pointermove', event => {
+    const r = audit.step;
+    if (r?.type === 'canvas' && r.firstAt === null && event.isTrusted && event.buttons === 1 && relevant(event, r)) {
+      r.firstAt = performance.now();
+    }
+  }, true);
+  document.addEventListener('click', event => {
+    const r = audit.step;
+    if (r?.type === 'click' && event.isTrusted && relevant(event, r) && r.firstAt === null) {
+      // Buttons fire click rather than input. Their click is the edit ingress.
+      r.firstAt = performance.now();
+      r.releaseAt ??= r.firstAt;
+    }
+  }, true);
+  audit.finished = drain => {
+    const r = audit.step, accepted = state.acceptedPresentation;
+    if (!r || r.firstAt === null || r.releaseAt === null || !audit.stable(drain)) return false;
+    if (r.raw && state.importGeneration === r.importGeneration) return false;
+    const last = r.frames.findLast(f => f.accepted === accepted && f.currentAtCompletion);
+    if (!last) return false;
+    if (drain) return { drainedAt: performance.now() };
+    return true;
+  };
+}
+
+function bounded(work, label, timeout = LIMIT) {
+  let timer;
+  const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(Error(`${label} timed out after ${timeout} ms`)), timeout); });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+}
+
+async function stable(page) {
+  await page.waitForFunction(() => __moduleAudit.stable(true), null, { timeout: LIMIT });
+  await bounded(page.evaluate(async () => {
+    await state.gpuPreview.device.queue.onSubmittedWorkDone();
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  }), 'Idle GPU fence');
+}
+
+async function reveal(page, selector) {
+  await page.evaluate(selector => {
+    const control = document.querySelector(selector);
+    if (!control) throw Error(`Missing control ${selector}`);
+    const parents = [];
+    for (let el = control.parentElement; el; el = el.parentElement) parents.unshift(el);
+    for (const el of parents) {
+      if (el.classList.contains('collapsed')) el.querySelector(':scope > .control-group-header .group-toggle')?.click();
+      if (el.tagName === 'DETAILS') el.open = true;
+      if (el.matches('.film-stage')) {
+        el.querySelector(':scope > .film-stage-heading[aria-expanded="false"]')?.click();
+      }
+    }
+  }, selector);
+  const locator = page.locator(selector).first();
+  await locator.scrollIntoViewIfNeeded();
+  return locator;
+}
+
+async function pointerDrag(page, locator) {
+  const box = await locator.boundingBox();
+  if (!box) throw Error('Slider is not visible');
+  const fraction = await locator.evaluate(c => (Number(c.value) - Number(c.min)) / (Number(c.max) - Number(c.min)));
+  if (!Number.isFinite(fraction)) throw Error('Slider lacks a finite range');
+  const start = Math.max(.02, Math.min(.98, fraction));
+  const end = start > .73 ? start - .18 : start + .18;
+  const x = box.x + box.width * start, y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  try {
+    for (let i = 1; i <= 9; i++) {
+      await page.mouse.move(x + box.width * (end - start) * i / 9, y);
+      await delay(20);
+    }
+  } finally { await page.mouse.up(); }
+}
+
+// Use one compositor method for the actual ON/OFF comparison, even if the
+// two states use different rendering routes. For step evidence use the tiled
+// presentation texture when available, using the sweep's nine patches.
+async function signature(page, screen = false) {
+  if (!screen) {
+    const texture = await bounded(page.evaluate(async () => {
+      const gpu = state.gpuPreview, target = gpu.presentationTarget;
+      if (!target?.valid || state.acceptedPresentation?.execution !== 'tiled') return null;
+      const visible = visibleOutputRect(target.width, target.height) ?? { x: 0, y: 0, width: target.width, height: target.height };
+      let hash = 2166136261;
+      for (const fy of [.1, .5, .9]) for (const fx of [.1, .5, .9]) {
+        const x = Math.max(0, Math.min(target.width - 32, Math.floor(visible.x + visible.width * fx)));
+        const y = Math.max(0, Math.min(target.height - 32, Math.floor(visible.y + visible.height * fy)));
+        const patch = await gpu.readPresentationRegion(32, 32, x, y);
+        for (const byte of new Uint8Array(new Float32Array(patch.values).buffer)) hash = Math.imul(hash ^ byte, 16777619);
+      }
+      return (hash >>> 0).toString(16).padStart(8, '0');
+    }), 'Tiled signature readback', 15_000);
+    if (texture !== null) return `texture:${texture}`;
+  }
+  const clip = await page.evaluate(() => {
+    const image = activePreviewElement().getBoundingClientRect(), viewer = els.dropzone.getBoundingClientRect();
+    const x = Math.ceil(Math.max(0, image.left, viewer.left)), y = Math.ceil(Math.max(0, image.top, viewer.top));
+    return { x, y, width: Math.floor(Math.min(innerWidth, image.right, viewer.right)) - x,
+      height: Math.floor(Math.min(innerHeight, image.bottom, viewer.bottom)) - y };
+  });
+  if (clip.width < 1 || clip.height < 1) throw Error('No visible image to sign');
+  return `compositor:${shaBuffer(await page.screenshot({ clip, timeout: 15_000 }))}`;
+}
+
+function measureWith(page, memory) {
+  const requests = [];
+  let measuring = false;
+  page.on('request', request => {
+    if (measuring && request.method() === 'POST' && /\/denoise(?:[-/][^?]+)?(?:\?|$)/.test(request.url())) {
+      requests.push(new URL(request.url()).pathname);
+    }
+  });
+  return async (descriptor, action) => {
+    const locator = await reveal(page, descriptor.selector);
+    if (!await locator.isEnabled()) throw Error(`Disabled control: ${descriptor.selector}`);
+    if (!descriptor.draft) await stable(page);
+    const roles = (await global.HDRFinisherElectronTestHarness.memory()).roles;
+    const baseline = await memory.baseline(), errorAt = memory.errors.length;
+    let visible, outcome;
+    requests.length = 0;
+    measuring = true;
+    try {
+      await page.evaluate(d => {
+        const r = __moduleAudit.step = { ...d, firstAt: null, releaseAt: null, frames: [], errors: [],
+          importGeneration: state.importGeneration, allocator: __moduleAudit.allocator(),
+          analysis: state.gpuPreview.denoiseCounters.analysisCalls };
+        r.timer = setInterval(() => __moduleAudit.bump(r), 200);
+      }, descriptor);
+      await bounded(action(locator), descriptor.step);
+      // Diagnostic failures include a missing input or absent new frame, not
+      // a duration fabricated from the boot or preceding step's frame.
+      const input = await page.evaluate(() => __moduleAudit.step.firstAt);
+      if (input === null) throw Error('Native action did not produce a timing input');
+      visible = await page.waitForFunction(() => __moduleAudit.finished(false), null, { timeout: LIMIT });
+      await visible.dispose();
+      const drained = await page.waitForFunction(() => __moduleAudit.finished(true), null, { timeout: LIMIT });
+      const { drainedAt } = await drained.jsonValue();
+      await drained.dispose();
+      outcome = await page.evaluate(drainedAt => {
+        const r = __moduleAudit.step, a = state.acceptedPresentation;
+        const last = r.frames.findLast(f => f.accepted === a && f.currentAtCompletion);
+        const first = r.frames.filter(f => f.fenced && f.currentAtCompletion)
+          .sort((a, b) => a.completedAt - b.completedAt)[0];
+        const fallbacks = new Set(r.frames.flatMap(f => f.accepted.fallbackReason ? [f.accepted.fallbackReason] : []));
+        if (a.grainRoute?.fallback) fallbacks.add(String(a.grainRoute.fallback));
+        const route = a.transport === 'WebGPU' ? `gpu-${a.execution || 'unknown'}` : `cpu-${a.transport || 'unknown'}`;
+        return {
+          first_feedback_ms: first ? first.completedAt - r.firstAt : null,
+          settle_ms: Math.max(0, last.completedAt - r.releaseAt),
+          drained_ms: Math.max(0, drainedAt - r.releaseAt),
+          whole_wait_ms: last.completedAt - r.firstAt, route, fallbacks: [...fallbacks],
+          processedLongEdge: a.processedLongEdge, allocator: r.allocator, errors: r.errors,
+          rebuilds: Math.max(0, state.gpuPreview.denoiseCounters.analysisCalls - r.analysis),
+          ended: performance.timeOrigin + drainedAt,
+        };
+      }, drainedAt);
+    } finally {
+      measuring = false;
+      await bounded(page.evaluate(() => {
+        clearInterval(__moduleAudit.step?.timer);
+        __moduleAudit.step = null;
+      }).catch(() => {}), 'Stop renderer observation', 1500).catch(() => {});
+    }
+    outcome.rebuilds += requests.filter(url => /analysis|prepare/i.test(url)).length;
+    outcome.errors.push(...memory.errors.slice(errorAt).filter(Boolean));
+    if (!baseline) outcome.errors.push('No idle process memory sample');
+    if (outcome.first_feedback_ms === null) {
+      if (outcome.route.startsWith('gpu-')) outcome.errors.push('No current GPU-fenced feedback frame');
+      else outcome.fallbacks.push('No current GPU-fenced feedback frame on this route');
+    }
+    outcome.memory_mb = memory.summarize(baseline, outcome.ended, roles, outcome.allocator);
+    outcome.signature = await signature(page);
+    return outcome;
+  };
+}
+
+function step(name, kind, state, reason = null) {
+  return { step: name, kind, state, processedLongEdge: 0, ...Object.fromEntries(TIMINGS.map(k => [k, stats([])])),
+    route: null, fallbacks: [], signature: null, memory_mb: Object.fromEntries(MEMORY.map(k => [k, null])),
+    skipped: reason, errors: [] };
+}
+
+function addSample(target, sample) {
+  for (const key of TIMINGS) if (sample[key] !== null) target[key].samples.push(sample[key]);
+  for (const key of MEMORY) {
+    const n = sample.memory_mb[key];
+    if (n !== null) target.memory_mb[key] = Math.max(target.memory_mb[key] ?? 0, n);
+  }
+  target.processedLongEdge = sample.processedLongEdge;
+  const routes = new Set([...(target.route?.split(' / ') ?? []), sample.route]);
+  target.route = [...routes].join(' / ');
+  target.signature = sample.signature;
+  target.fallbacks = [...new Set([...target.fallbacks, ...sample.fallbacks])];
+  target.errors = [...new Set([...target.errors, ...sample.errors])];
+}
+function finalizeSteps(row) {
+  for (const step of row.steps) for (const key of TIMINGS) step[key] = stats(step[key].samples);
+}
+
+async function setZoom(page, zoom) {
+  await page.evaluate(zoom => setZoomMode(zoom === '100' ? 'actual' : 'fit'), zoom);
+  await stable(page);
+}
+async function openPhoto(page, photo, rendition, zoom) {
+  const id = await page.evaluate(() => state.session?.session_id ?? null);
+  await bounded(page.evaluate(async file => {
+    state.appPreferences.gradeAutosave = false;
+    const selection = await desktop.grantSourcePath(file);
+    if (!selection) throw Error('Could not grant the audit source');
+    await openStagedDesktopSource(selection);
+    activateWorkflowTab('grade');
+  }, photo.input), 'Open disposable audit source');
+  await page.waitForFunction(previous => state.session?.session_id && state.session.session_id !== previous, id, { timeout: 8000 });
+  await page.evaluate(view => { if (state.currentView !== view) switchLane(view); }, rendition);
+  await setZoom(page, zoom);
+}
+
+async function setDenoise(page, enabled, method) {
+  if (method) await bounded(page.evaluate(method => commitDenoiseControl('method', method), method), 'Set Denoise method');
+  if (await page.evaluate(() => state.denoise[state.currentView].enabled) !== enabled) {
+    await bounded(page.evaluate(enabled => setDenoiseEnabled(enabled), enabled), 'Set Denoise eye');
+    await stable(page);
+  }
+}
+async function prime(page) {
+  await setDenoise(page, true, 'clean_grain');
+  await setDenoise(page, false);
+}
+
+async function seedRaw(page, id, recipe, on, zoom) {
+  const key = { 'raw.cleanup': 'pixel_cleanup', 'raw.lens': 'lens', 'raw.highlights': 'highlight_reconstruction' }[id];
+  const importId = await page.evaluate(async ({ key, values }) => {
+    const source = sourcePathForClipboard();
+    const id = state.session.session_id, previous = state.importGeneration;
+    const rawImportSettings = structuredClone(state.editDocument.source.raw_import_settings);
+    Object.assign(rawImportSettings[key], values);
+    if (JSON.stringify(rawImportSettings) !== JSON.stringify(state.editDocument.source.raw_import_settings)) {
+      await openStagedDesktopSource({ ...await desktop.grantSourcePath(source), rawImportSettings, replaceSessionId: id });
+      if (state.importGeneration <= previous || !Object.entries(values).every(([k, v]) => state.editDocument.source.raw_import_settings[key]?.[k] === v)) {
+        throw Error(`RAW ${key} settings did not persist`);
+      }
+    }
+    return state.session.session_id;
+  }, { key, values: on ? recipe.on : recipe.off });
+  if (!importId) throw Error('RAW development lost the session');
+  await setZoom(page, zoom);
+}
+
+async function applyChanges(page, rendition, changes) {
+  if (!changes || !Object.keys(changes).length) return;
+  await bounded(page.evaluate(async ({ rendition, changes }) => {
+    const adjustments = structuredClone(state.adjustments);
+    for (const [key, value] of Object.entries(changes)) setValueByPath(adjustments, key.replaceAll('$lane', rendition), value);
+    if (!await queueEditCommand('set_global_adjustments', { adjustments })) throw Error('Audit grade setup was rejected');
+  }, { rendition, changes }), 'Seed audit grade');
+  await stable(page);
+}
+
+async function selectTab(page, tab = 'global') {
+  const control = page.locator(tab === 'global' ? '[data-control-mode="global"]' : `#grade-mode-${tab}`);
+  if (await control.count() && await control.getAttribute('aria-selected') !== 'true') await control.click();
+}
+
+async function openMatch(page) {
+  const response = page.waitForResponse(r => r.url().endsWith('/sdr-match') && r.request().method() === 'POST', { timeout: LIMIT });
+  response.catch(() => {});
+  await page.locator('#sdr-match-entire').click();
+  const reply = await response;
+  if (!reply.ok()) throw Error(`SDR Match failed with HTTP ${reply.status()}: ${(await reply.text()).slice(0, 400)}`);
+  await page.waitForFunction(() => !els.sdrMatchEntire.disabled, null, { timeout: LIMIT });
+}
+
+async function seed(page, id, recipe, rendition, zoom) {
+  if (isRaw(id)) {
+    if (!await page.evaluate(() => isRawSession(state.session))) return 'This source is not camera RAW.';
+    await seedRaw(page, id, recipe, true, zoom);
+    return null;
+  }
+  await applyChanges(page, rendition, { ...recipe.changes, ...(id === 'highlight_compression' ? recipe[rendition] : {}) });
+  if (EYES[id]) {
+    await selectTab(page, id === 'local' ? 'local' : 'global');
+    const control = await reveal(page, eye(renameLane(EYES[id], rendition)));
+    if (await control.getAttribute('aria-pressed') !== 'true') await control.click();
+  }
+  if (id === 'bands') {
+    await page.evaluate(({ rendition, band }) => {
+      const nodes = currentToneEqualizerNodes(rendition);
+      const middle = Math.floor(nodes.length / 2);
+      Object.assign(nodes[middle], band);
+      commitAdjustmentValue(`${rendition}.tone_equalizer_nodes`, nodes, { manual: true });
+    }, { rendition, band: recipe.band });
+  } else if (id === 'hsl') {
+    await page.evaluate(({ channel, ...recipe }) => {
+      const ui = hslUI.panels[0];
+      ui.channel = channel;
+      hslEdit(ui, () => Object.assign(hslChannel(ui).recipe, recipe));
+    }, recipe);
+  } else if (id === 'local') {
+    const { createLocalAdjustment } = require('../helpers/local-adjustments');
+    for (const local of recipe.locals) {
+      await createLocalAdjustment(page, local.type);
+      await page.evaluate(async ({ rendition, exposure }) => {
+        const local = structuredClone(selectedLocal());
+        local[`${rendition}_grade`].exposure = exposure;
+        if (!await queueEditCommand('update_local', { local }, local.id)) throw Error('Local grade setup was rejected');
+      }, { rendition, exposure: local.exposure });
+      await stable(page);
+    }
+  } else if (id === 'retouch') {
+    await selectTab(page, 'retouch');
+    for (const [i, spot] of recipe.repairs.entries()) {
+      if (!await page.evaluate(() => retouchUI.active && retouchUI.mode === 'heal')) await page.locator('#retouch-mode-heal').click();
+      const points = await page.evaluate(async ({ spot, size }) => {
+        await ensureGeometryCoordinateMap();
+        const control = document.querySelector('#retouch-size');
+        control.value = String(size);
+        control.dispatchEvent(new Event('input', { bubbles: true }));
+        const image = activePreviewElement().getBoundingClientRect(), viewer = els.dropzone.getBoundingClientRect();
+        const x = Math.max(image.left, viewer.left), y = Math.max(image.top, viewer.top);
+        const w = Math.min(image.right, viewer.right) - x, h = Math.min(image.bottom, viewer.bottom) - y;
+        return [spot.source, spot.destination].map(([fx, fy]) => [x + w * fx, y + h * fy]);
+      }, { spot, size: recipe.size });
+      for (const point of points) await page.mouse.click(...point);
+      await page.waitForFunction(count => state.editDocument.repairs.length > count && !retouchUI.busy, i, { timeout: LIMIT });
+      await stable(page);
+    }
+  } else if (id === 'sdr_match') {
+    await openMatch(page);
+  }
+  await stable(page);
+  return null;
+}
+
+function moduleLane(id, selected) {
+  return selected || (id === 'sdr_match' ? 'sdr' : 'hdr');
+}
+const offMethod = id => isRaw(id) ? 'setting'
+  : EYES[id] || ['denoise', 'retouch'].includes(id) ? 'eye' : 'neutral';
+
+async function moduleState(page, id, recipe, rendition, zoom, on) {
+  if (isRaw(id)) return seedRaw(page, id, recipe, on, zoom);
+  if (id === 'denoise') return setDenoise(page, on, 'clean_grain');
+  if (EYES[id]) {
+    await selectTab(page, id === 'local' ? 'local' : 'global');
+    const control = await reveal(page, eye(renameLane(EYES[id], rendition)));
+    if ((await control.getAttribute('aria-pressed') === 'true') !== on) await control.click();
+  } else if (id === 'retouch') {
+    await bounded(page.evaluate(async on => {
+      await commitRetouch(state.editDocument.repairs.map(repair => ({ ...repair, enabled: on })));
+    }, on), 'Set repair eyes');
+  } else if (id === 'geometry' || id === 'sdr_match') {
+    // These have no section eye. The OFF recipe is a genuinely fresh grade,
+    // rather than pretending that the geometry or matched values were bypassed.
+    await openPhoto(page, currentInput(page), rendition, zoom);
+    if (on) await seed(page, id, recipe, rendition, zoom);
+  }
+  await selectTab(page);
+  await stable(page);
+}
+
+const photoForPage = new WeakMap();
+const currentInput = page => photoForPage.get(page);
+
+async function canvasDrag(page, locator) {
+  const b = await locator.boundingBox();
+  if (!b) throw Error('Curve editor is not visible');
+  const point = await page.evaluate(() => {
+    const canvas = document.querySelector('#curve-editor');
+    const rect = canvas.getBoundingClientRect();
+    return { x: rect.left + rect.width * .50, y: rect.top + rect.height * .42 };
+  });
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  try { await page.mouse.move(point.x, point.y - b.height * .16, { steps: 8 }); }
+  finally { await page.mouse.up(); }
+}
+
+const TIMINGS = [...CLOCKS, 'whole_wait_ms'];
+const slider = selector => ({ selector, name: selector.replace(/^#/, ''), type: 'range' });
+const button = (selector, name) => ({ selector, name, type: 'click' });
+
+async function ownControls(page, id, rendition) {
+  if (id === 'baseline' || id === 'denoise') return [];
+  if (id === 'curves') return [
+    { selector: '#curve-editor', name: 'curve.drag', type: 'canvas' },
+    button(eye(EYES[id]), 'eye'),
+  ];
+  if (id === 'geometry') return [{ ...slider('#crop-straighten'), name: 'straighten.drag', geometry: true }];
+  if (id === 'sdr_match') return [button('#sdr-match-entire', 'entire.click')];
+  if (id === 'retouch') return [
+    { ...slider('#retouch-size'), tab: 'retouch', repair: true },
+    { ...button('#retouch-list button[aria-label^="Hide "]', 'eye'), tab: 'retouch' },
+  ];
+  if (id === 'raw.cleanup') return [{ ...slider('#raw-speck-threshold'), raw: true, disclosure: true }];
+  if (id === 'raw.lens') return [{ ...button('#lens-distortion', 'distortion.click'), raw: true, disclosure: true, applyRaw: true }];
+  if (id === 'raw.highlights') return [
+    { ...slider('#raw-highlight-threshold'), raw: true },
+    { ...button('#raw-highlight-bypass', 'eye'), raw: true },
+  ];
+  const selectors = (RANGE[id] || []).map(s => renameLane(s, rendition))
+    .map(s => id === 'bands' && rendition === 'sdr' ? '#sdr-tone-equalizer-band-value' : s);
+  return [...selectors.map(s => ({ ...slider(s), tab: id === 'local' ? 'local' : 'global' })),
+    ...(EYES[id] ? [{ ...button(eye(renameLane(EYES[id], rendition)), 'eye'), tab: id === 'local' ? 'local' : 'global' }] : [])];
+}
+
+async function performControl(page, measure, row, descriptor) {
+  await selectTab(page, descriptor.tab || 'global');
+  if (descriptor.disclosure && await page.locator('#raw-settings-toggle').getAttribute('aria-expanded') !== 'true') {
+    await page.locator('#raw-settings-toggle').click();
+  }
+  if (descriptor.geometry && await page.locator('#rotate-tool-toggle').getAttribute('aria-pressed') !== 'true') {
+    await page.locator('#rotate-tool-toggle').click();
+  }
+  if (descriptor.repair) {
+    await page.evaluate(() => {
+      const repair = state.editDocument.repairs.at(-1);
+      if (repair) selectRetouchRepair(repair.id);
+    });
+  }
+  return measure({ ...descriptor, step: row.step }, async locator => {
+    if (descriptor.type === 'canvas') await canvasDrag(page, locator);
+    else if (descriptor.type === 'range') await pointerDrag(page, locator);
+    else if (descriptor.selector === '#sdr-match-entire') await openMatch(page);
+    else await locator.click();
+    if (descriptor.applyRaw) await page.locator('#apply-raw-settings').click();
+    if (descriptor.geometry) await page.locator('#rotate-apply').click();
+    if (descriptor.repair) await page.locator('#retouch-apply').click();
+  });
+}
+
+function timedStep(row, name, kind, state, skipped = null) {
+  let target = row.steps.find(s => s.step === name && s.state === state);
+  if (!target) row.steps.push(target = step(name, kind, state, skipped));
+  return target;
+}
+
+async function denoiseUnavailable(page, method) {
+  if (method !== 'micro_grain') return null;
+  return page.evaluate(() => {
+    const raw = state.editDocument?.source?.raw_import_settings?.highlight_reconstruction;
+    if (raw?.enabled && raw.method === 'edge_colour_v1') return 'Micro Grain is unavailable with Highlight Reconstruction Edge colour.';
+    if (state.editDocument?.repairs?.some(repair => repair.enabled)) return 'Micro Grain is unavailable with Retouch repairs.';
+    return null;
+  });
+}
+
+async function auditModule(page, measure, row, cfg, photo) {
+  const { module: id, lane: rendition, recipe } = row;
+  const zoom = cfg.zoom;
+  const count = isRaw(id) ? 3 : cfg.samples;
+  const warmups = isRaw(id) ? 1 : cfg.warmups;
+  const denoiseEye = button('#denoise-bypass', 'eye');
+  const sample = async (target, descriptor, warm = false) => {
+    const measured = await performControl(page, measure, target, descriptor);
+    if (!warm) {
+      addSample(target, measured);
+      if (descriptor.denoise) row.denoiseRebuilds += measured.rebuilds;
+    }
+    return measured;
+  };
+  const check = async target => {
+    await selectTab(page);
+    await stable(page);
+    row[target] = await signature(page, true);
+  };
+  const changeState = async on => {
+    await moduleState(page, id, recipe, rendition, zoom, on);
+    if (id !== 'denoise') await prime(page);
+    else {
+      await prime(page);
+      await setDenoise(page, on, 'clean_grain');
+    }
+  };
+  const seedOn = async () => {
+    await openPhoto(page, photo, rendition, zoom);
+    const skipped = await seed(page, id, recipe, rendition, zoom);
+    if (skipped) return skipped;
+    if (id !== 'denoise') await prime(page);
+    return null;
+  };
+  const skipped = await seedOn();
+  if (skipped) {
+    row.status = 'skipped';
+    row.errors.push(skipped);
+    return;
+  }
+
+  if (id === 'denoise') {
+    for (const method of METHODS) {
+      const reason = await denoiseUnavailable(page, method);
+      const cold = timedStep(row, `cold.denoise.${method}.toggle_on`, 'cold', 'on', reason);
+      const eyeStep = timedStep(row, `own.denoise.${method}.eye`, 'own', 'on', reason);
+      const dial = slider(method === 'micro_grain' ? '#denoise-micro-luminance' : '#denoise-amount');
+      const range = timedStep(row, `own.denoise.${method}.amount.drag`, 'own', 'on', reason);
+      if (reason) continue;
+      await setDenoise(page, false, method);
+      await sample(cold, { ...denoiseEye, denoise: true });
+      for (let i = -warmups; i < count; i++) {
+        if (i !== -warmups) {
+          await setDenoise(page, false);
+          await page.evaluate(() => resetControlGroup('denoise'));
+          await stable(page);
+        }
+        await setDenoise(page, true, method);
+        await sample(range, { ...dial, denoise: true }, i < 0);
+        await sample(eyeStep, { ...denoiseEye, denoise: true }, i < 0);
+      }
+    }
+    await setDenoise(page, false);
+    await page.evaluate(() => resetControlGroup('denoise'));
+    await stable(page);
+  } else {
+    for (const d of await ownControls(page, id, rendition)) {
+      const label = d.type === 'range' && !d.name.endsWith('.drag') ? d.name + '.drag' : d.name;
+      const target = timedStep(row, `own.${id}.${label}`, 'own', 'on');
+      for (let i = -warmups; i < count; i++) {
+        await sample(target, d, i < 0);
+        if (d.raw) { await seedRaw(page, id, recipe, true, zoom); await prime(page); }
+        else await seedOn();
+      }
+    }
+  }
+
+  if (id !== 'baseline') {
+    await changeState(true);
+    await check('onSignature');
+    // RAW is measured as two blocks. Defer the OFF signature until the
+    // OFF block has actually been re-developed.
+    if (!isRaw(id)) { await changeState(false); await check('offSignature'); }
+  }
+  const probePass = async (on, index) => {
+    const stateName = on ? 'on' : 'off';
+    for (const probe of PROBES) {
+      const isDenoise = probe.startsWith('probe.denoise');
+      const self = !on && (id === 'tone' && !isDenoise || id === 'denoise' && isDenoise);
+      const target = timedStep(row, probe, 'probe', stateName, self ? 'Self-reference: probe belongs to the bypassed module.' : null);
+      if (self) continue;
+      if (isDenoise) {
+        const enable = probe.endsWith('_on');
+        await setDenoise(page, !enable, 'clean_grain');
+        await sample(target, { ...denoiseEye, denoise: true }, index < 0);
+        if (id === 'denoise') await setDenoise(page, on, 'clean_grain');
+      } else {
+        const key = probe.split('.')[2];
+        const selector = '#' + rendition + '-' + key;
+        const before = await page.locator(selector).inputValue();
+        await sample(target, slider(selector), index < 0);
+        // Restore the exact seeded slider value outside the timing window.
+        await page.locator(selector).evaluate((el, value) => {
+          el.value = value;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }, before);
+        await stable(page);
+      }
+    }
+  };
+  if (isRaw(id)) {
+    for (const on of [true, false]) {
+      if (!on) { await changeState(false); await check('offSignature'); }
+      for (let i = -warmups; i < count; i++) await probePass(on, i);
+    }
+  } else if (id === 'baseline') {
+    for (let i = -warmups; i < count; i++) await probePass(true, i);
+  } else {
+    for (let i = -warmups; i < count; i++) {
+      for (const on of (i + warmups) % 2 ? [false, true] : [true, false]) {
+        await changeState(on);
+        await probePass(on, i);
+      }
+    }
+  }
+  row.pixelsChanged = id !== 'baseline' && row.onSignature !== row.offSignature;
+  row.status = 'complete';
+}
+
+function newModule(id, rendition) {
+  const recipe = RECIPES[id];
+  return { module: id, lane: rendition, recipe, recipeHash: recipeHash(recipe), offMethod: offMethod(id),
+    alternation: isRaw(id) ? 'blocked' : 'interleaved', pixelsChanged: false, loadAverage: os.loadavg(),
+    denoiseRebuilds: 0, status: 'pending', errors: [], steps: [], impact: [] };
+}
+
+async function runMetadata(page, cfg, photo, file) {
+  const details = await page.evaluate(() => {
+    const gpu = window.HDRFinisherPerformance.gpuSnapshot();
+    const { width, height } = state.session.source;
+    return { width, height, dpr: devicePixelRatio, window: `${outerWidth}x${outerHeight}`,
+      adapter: gpu.adapter?.description || [gpu.adapter?.vendor, gpu.adapter?.architecture, gpu.adapter?.device].filter(Boolean).join(' '),
+      previewResolution: state.previewResolutionOverride ? normalizedPreviewResolution() : 'auto' };
+  });
+  const power = process.env.HDR_FINISHER_POWER_MODE || 'unknown';
+  const response = await global.HDRFinisherElectronTestHarness.fetch('/api/library/memory-setting', { signal: AbortSignal.timeout(3000) });
+  if (!response.ok) throw Error(`Could not read the app memory ceiling (HTTP ${response.status})`);
+  const { ceilingBytes } = await response.json();
+  if (!Number.isFinite(ceilingBytes) || ceilingBytes <= 0) throw Error('The app did not report a valid memory ceiling.');
+  return { schema: 'module-impact-v1', audit: path.basename(path.dirname(file)),
+    driver: { path: DRIVE, sha256: await shaFile(__filename) },
+    machine: { name: os.hostname(), platform: process.platform, chip: os.cpus()[0]?.model.trim() || os.arch(),
+      ramGiB: Math.round(os.totalmem() / 1024 ** 3 * 100) / 100, window: details.window,
+      dpr: details.dpr, powerSource: power, powerMode: power, gpuAdapter: details.adapter || 'unreported' },
+    app: { version: require('../../desktop/package.json').version, commit: git('rev-parse', 'HEAD'),
+      dirty: Boolean(git('status', '--porcelain', '--untracked-files=no')) },
+    photo: { role: photo.role, file: photo.file, sha256: photo.sha256, megapixels: details.width * details.height / 1e6 },
+    zoom: cfg.zoom, previewResolution: details.previewResolution, appMemoryCeilingMb: mb(ceilingBytes), samples: cfg.samples, warmups: cfg.warmups,
+    denoiseProbeMethod: 'clean_grain', startedAt: new Date().toISOString(), durationSec: 0, modules: [],
+    noise: { baseline_start: {}, baseline_middle: {}, baseline_end: {}, spread_pct: 0 } };
+}
+
+function saveBaseline(run, row, phase) {
+  const key = 'baseline_' + phase;
+  run.noise[key] = {};
+  if (row.status === 'complete') {
+    for (const s of row.steps) run.noise[key][s.step] = Object.fromEntries(CLOCKS.map(clock => [clock, s[clock].median]));
+  }
+  updateNoiseSpread(run.noise);
+}
+
+async function audit() {
+  const cfg = options(process.argv);
+  if (!cfg) {
+    console.log('Usage: grade-module-impact.js [--module <id>[,<id>...] | --all] [--photo typical|large|noisy|<path>] [--zoom fit|100] [--lane hdr|sdr] [--samples N] [--warmup N] [--out <folder>] [--resume]');
+    return null;
+  }
+  const photo = await findPhoto(cfg.photo);
+  const token = photo.role === 'path' ? photo.file.replace(/[^\w.-]/g, '_') + '-' + photo.sha256.slice(0, 12) : photo.role;
+  fs.mkdirSync(cfg.out, { recursive: true });
+  const file = path.join(cfg.out, `module-impact-${token}-${cfg.zoom}.json`);
+  const cursor = Number(process.env.HDR_FINISHER_MODULE_AUDIT_CURSOR || '0');
+  const old = (cfg.resume || cursor) && fs.existsSync(file)
+    ? validateRun(JSON.parse(fs.readFileSync(file, 'utf8')), file) : null;
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch({ headless: false });
+  const page = await browser.newPage();
+  photoForPage.set(page, photo);
+  const memory = sampler();
+  try {
+    await page.goto(process.env.HDR_FINISHER_URL);
+    await page.waitForFunction(() => window.HDRFinisherPerformance?.gpuSnapshot()?.available, null, { timeout: LIMIT });
+    await page.evaluate(() => window.HDRFinisherPerformance.enableGpuInstrumentation(true));
+    await page.evaluate(installObserve);
+    await openPhoto(page, photo, moduleLane(cfg.plan[0].split(':')[0], cfg.lane), cfg.zoom);
+    const fresh = await runMetadata(page, cfg, photo, file);
+    if (old && (old.driver.sha256 !== fresh.driver.sha256 || old.photo.sha256 !== fresh.photo.sha256
+      || old.zoom !== fresh.zoom || old.samples !== fresh.samples || old.warmups !== fresh.warmups
+      || old.previewResolution !== fresh.previewResolution || old.appMemoryCeilingMb !== fresh.appMemoryCeilingMb
+      || canonical(old.machine) !== canonical(fresh.machine)
+      || old.modules.some(row => cfg.plan.some(item => item.split(':')[0] === row.module)
+        && row.lane !== moduleLane(row.module, cfg.lane)))) {
+      throw Error('Cannot resume: driver, input, lane or measurement conditions changed. Use a fresh --out folder.');
+    }
+    const run = old || fresh;
+    const start = Date.now(), priorDuration = run.durationSec;
+    const measure = measureWith(page, memory);
+    let failed = Boolean(cursor && process.env.HDR_FINISHER_MODULE_AUDIT_FAILED);
+    const persist = () => {
+      run.durationSec = priorDuration + (Date.now() - start) / 1000;
+      for (const row of run.modules) {
+        row.impact = row.status === 'complete' && row.module !== 'baseline' ? impacts(row, run) : [];
+      }
+      saveFile(file, validateRun(run, file));
+    };
+    for (let index = cursor; index < cfg.plan.length; index++) {
+      const [id, phase] = cfg.plan[index].split(':');
+      if (old && (phase ? Object.keys(run.noise['baseline_' + phase]).length
+        : run.modules.some(row => row.module === id && row.status === 'complete'))) continue;
+      const row = newModule(id, moduleLane(id, cfg.lane));
+      console.log(`[module audit] ${cfg.plan[index]} (${row.lane})`);
+      let interrupted = false;
+      try { await auditModule(page, measure, row, cfg, photo); }
+      catch (error) {
+        failed = interrupted = true;
+        row.status = 'error';
+        row.errors.push(error.message || String(error));
+        console.error(`[module audit] ${id}: ${row.errors.at(-1)}`);
+      }
+      finalizeSteps(row);
+      const overCeiling = row.steps.filter(s => s.memory_mb.footprint_peak > run.appMemoryCeilingMb);
+      if (overCeiling.length) row.errors.push(`App memory ceiling exceeded (${run.appMemoryCeilingMb} MB) in ${overCeiling.map(s => s.step + '/' + s.state).join(', ')}.`);
+      if (row.steps.some(s => s.errors.length)) {
+        row.status = 'error';
+        failed = interrupted = true;
+      }
+      if (!phase || phase === 'start' || !run.modules.some(item => item.module === id)) {
+        run.modules = [...run.modules.filter(item => item.module !== id), row];
+      } else if (row.errors.length) {
+        run.modules.find(item => item.module === id).errors.push(...row.errors.map(error => `${phase}: ${error}`));
+      }
+      if (phase) saveBaseline(run, row, phase);
+      persist();
+      console.log(`[module audit] ${row.status}, ${row.steps.length} steps → ${file}`);
+      if (interrupted && index + 1 < cfg.plan.length) {
+        process.exitCode = 1; // preserve this failed Electron profile and logs
+        return async () => {
+          const env = { ...process.env, HDR_FINISHER_MODULE_AUDIT_CURSOR: String(index + 1),
+            HDR_FINISHER_MODULE_AUDIT_FAILED: '1' };
+          delete env.HDR_FINISHER_ELECTRON_TEST_USER_DATA;
+          const child = spawn(process.execPath, ['tests/run-in-electron.js', DRIVE, ...process.argv.slice(2)], { stdio: 'inherit', env });
+          const [code] = await once(child, 'exit');
+          process.exitCode = code || 1;
+        };
+      }
+    }
+    if (failed) process.exitCode = 1;
+    return null;
+  } finally {
+    await memory.stop();
+  }
+}
+
+if (require.main === module) {
+  const harness = global.HDRFinisherElectronTestHarness;
+  if (!harness) {
+    console.error('Launch via tests/run-in-electron.js under tools/gpu-run-lock.py.');
+    process.exitCode = 2;
+  } else {
+    audit().catch(error => { console.error(error); process.exitCode = 1; })
+      .then(afterShutdown => harness.close({ afterShutdown }))
+      .catch(error => { console.error(error); process.exitCode = 1; });
+  }
+}

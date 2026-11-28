@@ -8529,6 +8529,38 @@
       }
     },
     {
+      "path": "tests/performance/grade-module-impact.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Paired Grade module latency, memory, and pixel-impact audit",
+      "launch": {
+        "method": "electron"
+      },
+      "brief": "Measures isolated Grade controls and paired ON/OFF probe latency, memory, and pixel changes in a disposable Electron session. Writes module-impact-v1 JSON. Run one photo and zoom per invocation under the shared GPU lock.",
+      "expectedMinutes": {
+        "win": null,
+        "mac": null
+      },
+      "deadlineMinutes": 15,
+      "requirements": [
+        "Repository setup completed; Electron, Playwright, native tools and project Python available.",
+        "Approved test RAW photo (or --photo path); display session and WebGPU.",
+        "Hold the shared GPU lock and use the machine window. Use a dedicated overnight run for the full matrix."
+      ],
+      "platforms": {
+        "os": [
+          "win",
+          "mac",
+          "linux"
+        ],
+        "notes": [
+          "Compare only the same machine and measurement conditions. Windows and Mac timings are separate."
+        ]
+      }
+    },
+    {
       "path": "tests/performance/grade-release-sweep.js",
       "areas": [
         "preview",

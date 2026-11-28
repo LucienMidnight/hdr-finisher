@@ -56,6 +56,20 @@
       "platform_notes": []
     },
     {
+      "file": "tests/audit-summary.test.js",
+      "suite": "node",
+      "area": "audit",
+      "purpose": "Audit validation, findings merge, impact thresholds and same-machine comparisons",
+      "test_count": 5,
+      "seconds": {
+        "windows": null,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
       "file": "tests/backend-log.test.js",
       "suite": "node",
       "area": "backend",

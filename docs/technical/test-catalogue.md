@@ -32,6 +32,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/analytic-mask-region.test.js | live gradient eligibility retains content and resampling fallbacks | 8 | 0.1636 | unknown |  |
 | tests/app-dialog.test.js | Escape in the open app dialog allows native cancel without reaching page controls | 2 | 0.0049 | unknown |  |
 | tests/appearance.test.js | accent choices survive preference sanitization and match browser normalization | 9 | 0.0253 | unknown |  |
+| tests/audit-summary.test.js | Audit validation, findings merge, impact thresholds and same-machine comparisons | 5 | unknown | unknown |  |
 | tests/backend-log.test.js | slow diagnostic disk has bounded buffers and reports omitted records | 1 | 0.011 | unknown |  |
 | tests/backend-startup.test.js | startup extends the idle deadline for genuine progress | 7 | 10.7715 | unknown |  |
 | tests/batch-grid.test.js | batch progress groups each photo without changing badge precedence or retained rows | 3 | 0.0065 | unknown |  |
@@ -4015,6 +4016,15 @@ Test-only named GPU timestamps; preserves draw commands and releases query resou
 - Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/performance/stacked-raw-latency.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
+
+#### `tests/performance/grade-module-impact.js`
+
+Measures isolated Grade controls and paired ON/OFF probe latency, memory, and pixel changes in a disposable Electron session. Writes module-impact-v1 JSON. Run one photo and zoom per invocation under the shared GPU lock.
+
+- Expected minutes: Windows unknown; Mac unknown.
+- Unmeasured default deadline: 15 minutes. undefined
+- Requirements: Repository setup completed; Electron, Playwright, native tools and project Python available. Approved test RAW photo (or --photo path); display session and WebGPU. Hold the shared GPU lock and use the machine window. Use a dedicated overnight run for the full matrix.
+- Platforms: win, mac, linux. Compare only the same machine and measurement conditions. Windows and Mac timings are separate.
 
 #### `tests/performance/grade-open-contention.js`
 
