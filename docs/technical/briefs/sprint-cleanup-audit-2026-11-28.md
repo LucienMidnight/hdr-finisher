@@ -191,9 +191,9 @@ it, and a re-audit of the affected modules.
 | ID | Source finding(s) | Scope | Status | Result |
 | --- | --- | --- | --- | --- |
 | O1 | C-1, C-3, M5-2/3/5/9/12, R5-9 | Film Look makes upstream edits and Denoise toggles cost seconds | merged partly | Mist tap reuse `ee691ebe` (2.6 s → 0.78 s on a strong Pro-Mist check, pixel-identical); 90c82658 held (O1-5: tiled Film parity guard fails); tiled draft grain O1-4 needs Steve |
-| O2 | C-2, M4-6, M5-8, M5-11, R5-3, R5-11, M2-9 | GPU memory growth at 100% past the 4 GB ceiling | merged | `3b71e3f6`: worker run at 100% kept footprint 1.6–2.3 GB (was up to 4.2 GB); post-merge Node failures being fixed |
+| O2 | C-2, M4-6, M5-8, M5-11, R5-3, R5-11, M2-9 | GPU memory growth at 100% past the 4 GB ceiling | merged | `3b71e3f6`: worker run at 100% kept footprint 1.6–2.3 GB (was up to 4.2 GB). 28 post-merge Node failures were outdated test fakes, fixed `dc0439b4`, `78f75aa6`, `870e2afa`, `303726cc` |
 | O3 | C-4, M1-15 | Skip unchanged RAW Apply (pre-lens checkpoint, M1-5, needs Steve: disk allowance) | done | `5edb1799`: unchanged Apply 5.57 s → 0.33 s (42 MP Sony, Fit), pixels identical. AHD re-development dominates other RAW waits (3–4 s); Lensfun only 0.25 s |
-| O4 | C-5, M3-6, M3-9, M3-13, R5-5 | Highlight Compression +0.4 s settle on Tone edits | active (worktree, resumed) | M3-13 bounded `008d69be`; main fix `d87ae7f0` awaiting GPU checks |
+| O4 | C-5, M3-6, M3-9, M3-13, R5-5 | Highlight Compression +0.4 s settle on Tone edits | merged `3583dd9a` | Settle with HC on 485 → 270 ms (Exposure), 481 → 267 ms (Contrast) at Fit; peak 599.9998 nits under the 600 cap; M3-13 bounded; M3-6, R5-5 open (not the cause) |
 | O5 | C-6, M4-3, M4-4, M4-9, M3-5, M3-10 | HSL drag lag and panel redraw work | done | 7 fixed (M3-5, M3-10, M4-9, M4-2, M4-10, M4-11, M4-4 partly); HSL drag lag itself lives in renderer files (O5-1, O5-2 open) |
 | O6 | M3-13, R4-13, R2-12, M6-13, M6-14, R3-12, R1-17 | Hardening that does not change output | done | Fixed R4-13 `6a34ae81`, R2-12 `60297b09`, M6-14 `c84472e8`, R3-12 `839edaa8`; M3-13, M6-13 open (need webgpu-preview.js, after O1/O2 merge); R1-17 open (write order) |
 
