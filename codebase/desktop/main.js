@@ -730,14 +730,18 @@ function registerIpc() {
   handle("desktop:import-grading-preset-file", async () => {
     const result = await dialog.showOpenDialog(mainWindow, {title:"Import grading presets", properties:["openFile"], filters:[{name:"HDR Finisher presets",extensions:["json"]}]});
     if (result.canceled || !result.filePaths.length) return null;
-    if (fs.statSync(result.filePaths[0]).size > 2*1024*1024) throw Error("Preset file is too large (2 MiB maximum).");
-    return fs.readFileSync(result.filePaths[0], "utf8");
+    const file = result.filePaths[0];
+    if ((await fs.promises.stat(file)).size > 2*1024*1024) throw Error("Preset file is too large (2 MiB maximum).");
+    return fs.promises.readFile(file, "utf8");
   });
   handle("desktop:export-grading-preset-file", async (text) => {
-    if (typeof text !== "string" || text.length > 2*1024*1024 || JSON.parse(text).format !== "hdr-finisher-grading-presets") throw Error("Invalid preset file.");
-    const result = await dialog.showSaveDialog(mainWindow, {title:"Export grading presets", defaultPath:require("../frontend/grading-preset-files").exportName(JSON.parse(text).presets, JSON.parse(text).presets[0]?.groupId?.replace(/^(hdr|sdr)-/, "")), filters:[{name:"HDR Finisher presets",extensions:["json"]}]});
+    if (typeof text !== "string" || text.length > 2*1024*1024) throw Error("Invalid preset file.");
+    const { format, presets } = JSON.parse(text);
+    if (format !== "hdr-finisher-grading-presets") throw Error("Invalid preset file.");
+    const result = await dialog.showSaveDialog(mainWindow, {title:"Export grading presets", defaultPath:require("../frontend/grading-preset-files").exportName(presets, presets[0]?.groupId?.replace(/^(hdr|sdr)-/, "")), filters:[{name:"HDR Finisher presets",extensions:["json"]}]});
     if (result.canceled || !result.filePath) return false;
-    fs.writeFileSync(result.filePath, text, "utf8");return true;
+    await fs.promises.writeFile(result.filePath, text, "utf8");
+    return true;
   });
   handle("desktop:list-grading-presets", (groupId) => listGradingPresets(groupId));
   handle("desktop:save-grading-preset", (preset) => saveGradingPreset(preset));
