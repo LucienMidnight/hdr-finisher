@@ -1272,6 +1272,9 @@ menu wording, size label and Library toolbar; workflow tab font only).
   `findings-v1` and `module-impact-v1` formats, how to re-run and compare.
   One folder per run (`<date>-mac`, `<date>-pc`).
 
+- `docs/technical/briefs/film-fast-look-2026-11-28.md`: approved fast Film
+  Look (consistent Grain and compact Mist, same in preview and export) on
+  branch `film-fast-look`; Steve reviews crops before merge.
 - `docs/technical/research/film-speed-2026-11-28/`: Film Look speed research
   (Sol measured pass costs, Neon design survey, Mist PSF scripts) behind the
   approved fast Film plan.
