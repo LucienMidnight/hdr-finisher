@@ -62,14 +62,16 @@ class RawThumbnails:
         with self.lock:
             self.managed.prepare()
             self.root.mkdir(parents=True, exist_ok=True)
-            with NamedTemporaryFile(dir=self.root, suffix=".tmp", delete=False) as handle:
-                temp = Path(handle.name)
-                np.savez_compressed(handle, pixels=pixels, metadata=np.asarray(json.dumps(facts)))
+            temp = None
             try:
+                with NamedTemporaryFile(dir=self.root, suffix=".tmp", delete=False) as handle:
+                    temp = Path(handle.name)
+                    np.savez_compressed(handle, pixels=pixels, metadata=np.asarray(json.dumps(facts)))
                 os.replace(temp, self.file(key))
                 self.managed.record(self.file(key))
             finally:
-                temp.unlink(missing_ok=True)
+                if temp is not None:
+                    temp.unlink(missing_ok=True)
             self.managed.trim_soon()
 
     def pixels(self, key):

@@ -365,13 +365,16 @@ class OverlayMaps:
             return self.cache.transient_result(key, {'values':data,'metadata':np.asarray(json.dumps(meta))},meta)
         self.cache.managed.prepare()
         self.cache.root.mkdir(parents=True,exist_ok=True)
-        with NamedTemporaryFile(dir=self.cache.root,suffix='.tmp',delete=False) as f:
-            temp=Path(f.name);np.savez_compressed(f,values=data,metadata=np.asarray(json.dumps(meta)))
+        temp = None
         try:
+            with NamedTemporaryFile(dir=self.cache.root,suffix='.tmp',delete=False) as f:
+                temp=Path(f.name);np.savez_compressed(f,values=data,metadata=np.asarray(json.dumps(meta)))
             check_cancelled(cancelled)
             if map_key(path,kind,quality)!=key:raise ValueError("The source photo changed; overlay was not published.")
             self.cache.managed.publish(temp,self.file(key),path,epoch)
-        finally:temp.unlink(missing_ok=True)
+        finally:
+            if temp is not None:
+                temp.unlink(missing_ok=True)
         self.cache.trim();log("overlay_map_saved",**meta)
         return meta|{"key":key,"cache_hit":False,"stored_bytes":self.file(key).stat().st_size}
     def png(self,key):

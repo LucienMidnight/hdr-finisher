@@ -254,6 +254,38 @@ def test_disabled_overlay_is_transient_and_raw_save_is_skipped(tmp_path):
     assert not LibraryCache(profile).directory('library-raw-thumbnails').exists()
 
 
+@pytest.mark.parametrize('kind', ['raw-thumbnail', 'overlay'])
+def test_failed_library_cache_encoding_removes_partial_file(tmp_path, monkeypatch, kind):
+    from PIL import Image
+    from hdr_finisher.library_overlays import OverlayMaps
+    from hdr_finisher.library_raw import identity
+    from hdr_finisher.library_raw_thumbnails import RawThumbnails
+
+    source = tmp_path / 'source.png'
+    Image.new('RGB', (20, 20), 'white').save(source)
+    profile = tmp_path / 'profile'
+    if kind == 'raw-thumbnail':
+        cache = RawThumbnails(profile)
+        key, _, _ = identity(source)
+        meta = dict(path=str(source), transport_key=key, width=2, height=2, edge=512,
+                    adjustments={}, white=203, has_reference=False, source_width=20, source_height=20)
+        save = lambda: cache.store(meta, bytes(512))
+        directory = cache.root
+    else:
+        overlay = OverlayMaps(profile)
+        save = lambda: overlay.build(source, 'exposure')
+        directory = overlay.cache.root
+
+    def fail(stream, **_arrays):
+        stream.write(b'partial cache file')
+        raise OSError('simulated short disk write')
+
+    monkeypatch.setattr(np, 'savez_compressed', fail)
+    with pytest.raises(OSError, match='simulated short disk write'):
+        save()
+    assert list(directory.iterdir()) == []
+
+
 @pytest.mark.slow
 def test_running_total_publications_replacements_drift_and_clear(tmp_path, monkeypatch):
     from time import perf_counter
