@@ -1206,9 +1206,9 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 
   black screen, crop OOM, geometry audit, preview resolution stall).
 
-- `docs/technical/archive/`: 131 tracked files of old evidence, prompts and briefs
+- `docs/technical/archive/`: 132 tracked files of old evidence, prompts and briefs
 
-  (`archive/briefs/` holds 70 finished briefs). History only. Includes
+  (`archive/briefs/` holds 71 finished briefs). History only. Includes
 
   `archive/briefs/library-resource-scheduler-design-2026-10-30.md`, the
 
@@ -1221,6 +1221,12 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 - `docs/technical/archive/briefs/next-version-investigation-sprint-2026-11-13.md`:
 
   completed investigation plan. The proposal and 12 research reports are below.
+
+- `docs/technical/archive/briefs/backend-startup-reliability-2026-11-27.md`:
+
+  completed Windows startup and process-ownership hardening. Cross-platform
+
+  follow-up stays in the Desktop and release PRD.
 
 Completed thumbnail-memory work: `docs/technical/archive/briefs/library-thumbnail-memory-stall-2026-11-04.md` (November 5: admission and hidden job-buffer release).
 
@@ -1266,10 +1272,6 @@ menu wording, size label and Library toolbar; workflow tab font only).
 
 - `docs/technical/briefs/sdr-match-tone-fit-2026-11-27.md`: picture-based
   SDR Tone/Highlight Compression fit and per-module HDR Match actions.
-
-- `docs/technical/briefs/backend-startup-reliability-2026-11-27.md`: startup
-
-  progress, process ownership and Windows validation.
 
 - `docs/technical/briefs/denoise-grain-gpu-design-2026-11-20.md`: Fine Grain
 

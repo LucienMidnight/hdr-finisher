@@ -1,3 +1,21 @@
+## November 27: startup progress and process ownership
+
+The desktop now waits for distinct backend startup progress instead of
+rejecting a slow start after 30 seconds. The normal wait is up to 90 seconds
+without new progress and five minutes total. Test mode waits 45 seconds
+without progress and two minutes total, and unexpected native dialogs fail
+the test without displaying. Windows owns the backend tree with a Job
+Object. macOS and Linux use a process group. Electron test launchers capture
+ownership before connecting and verify that their own processes exit.
+
+The final Windows development check passed ten launch/health/quit cycles
+and a missing-backend case, with no surviving owned processes. The earlier
+manifest and catalogue failures were resolved. See the [Windows startup report](../../technical/archive/briefs/backend-startup-reliability-2026-11-27.md)
+for proof and commands. Confirm lifecycle and missing-backend behavior on
+macOS and Linux and in packaged builds when those environments are checked.
+Review the release runner's per-driver timing cutoffs after a full Mac
+release run. Neither follow-up is covered by the Windows results.
+
 ### November 26, 2026: window-state write failures
 
 Saving window bounds is best effort for close, Windows session end and app
