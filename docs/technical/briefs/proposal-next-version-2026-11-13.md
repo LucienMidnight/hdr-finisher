@@ -7,7 +7,7 @@ The work is given in [mac-phases-1-3-2026-11-13.md](mac-phases-1-3-2026-11-13.md
 Nothing here is built yet.
 **Coordinator:** Claude (Opus 5.5). **Research:** 12 Codex researchers
 (`gpt-6.1-sol`, medium effort), each in its own worktree from `main`.
-**Sprint plan:** [next-version-investigation-sprint-2026-11-13.md](next-version-investigation-sprint-2026-11-13.md).
+**Sprint plan:** [next-version-investigation-sprint-2026-11-13.md](../archive/briefs/next-version-investigation-sprint-2026-11-13.md).
 **Research notes:** `docs/technical/research/next-version-2026-11-13/`
 (one file per researcher; cited below as A1, A1b, ... C2).
 

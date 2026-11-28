@@ -1,3 +1,12 @@
+## Follow-up from the November 13 investigation
+
+The [investigation plan](../../technical/archive/briefs/next-version-investigation-sprint-2026-11-13.md)
+finished with 12 research reports and a [proposal](../../technical/briefs/proposal-next-version-2026-11-13.md)
+whose first three phases Steve approved. That closed the investigation, not
+the implementation. Proposal decision 9 still needs Steve's list of remaining
+Retouch changes and an example photo/grade that reproduces the Match fault.
+Those are separate from the Retouch and Match fixes already documented below.
+
 ## November 27: keep the denoised rendition in Compare
 
 A lane switch keeps the already finished whole picture in the comparison

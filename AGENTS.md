@@ -1206,9 +1206,9 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 
   black screen, crop OOM, geometry audit, preview resolution stall).
 
-- `docs/technical/archive/`: 130 tracked files of old evidence, prompts and briefs
+- `docs/technical/archive/`: 131 tracked files of old evidence, prompts and briefs
 
-  (`archive/briefs/` holds 69 finished briefs). History only. Includes
+  (`archive/briefs/` holds 70 finished briefs). History only. Includes
 
   `archive/briefs/library-resource-scheduler-design-2026-10-30.md`, the
 
@@ -1217,6 +1217,10 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
   references in the Library and memory PRDs point there.
 
 
+
+- `docs/technical/archive/briefs/next-version-investigation-sprint-2026-11-13.md`:
+
+  completed investigation plan. The proposal and 12 research reports are below.
 
 Completed thumbnail-memory work: `docs/technical/archive/briefs/library-thumbnail-memory-stall-2026-11-04.md` (November 5: admission and hidden job-buffer release).
 
@@ -1305,12 +1309,6 @@ menu wording, size label and Library toolbar; workflow tab font only).
 - `docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md`:
 
   prerelease test remediation plan.
-
-- `docs/technical/briefs/next-version-investigation-sprint-2026-11-13.md`:
-
-  next-version investigation sprint plan (finished; on
-
-  `feat/watermark-and-library-polish`, not yet on `main`).
 
 - `docs/technical/briefs/proposal-next-version-2026-11-13.md`: proposal for
 
