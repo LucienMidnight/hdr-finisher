@@ -18,8 +18,24 @@ vm.runInContext(shaderSource, context);
 vm.runInContext(source, context);
 const Preview = context.window.HDRWebGPUPreview;
 
+test("committed Denoise bypass keeps its one picture so turning it back on is instant", () => {
+  const preview = new Preview(null);
+  const released = [];
+  const texture = label => ({ destroy: () => released.push(label) });
+  const original = { texture: texture("source") };
+  const selector = preview.denoiseSourceSelector = {
+    selected: "resolved", original,
+    resolved: { texture: texture("resolved") },
+    cache: { adaptiveScratch: { textures: { current: texture("scratch") } } },
+  };
+  assert.equal(preview.cancelDenoiseProcessing(), true);
+  assert.equal(preview.denoiseSourceSelector, selector);
+  assert.equal(selector.selected, "original");
+  assert.equal(preview.denoiseRetirement ?? null, null);
+  assert.deepEqual(released, []);
+});
+
 for (const [name, options] of [
-  ["bypass", {}],
   ["method replacement", { selectOriginal: false, replaceMethod: true }],
 ]) {
   test(`committed Denoise ${name} retires only Denoise pixels before the next render`, async () => {

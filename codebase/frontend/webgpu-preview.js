@@ -8831,7 +8831,13 @@
       const generation = ++this.denoiseSelectorGeneration;
       this.denoisePreparationController?.abort();
       const selector = this.denoiseSourceSelector;
-      if ((selectOriginal || replaceMethod) && (selector || this.denoiseTiles.size || this.fineGrainReduced?.size)) {
+      if (selectOriginal && !replaceMethod && selector) {
+        // Bypass keeps the one committed Denoise picture so turning Denoise
+        // back on is instant. Memory stays bounded: a method change below
+        // retires it, and only one method's picture is ever kept.
+        if (selector.selected === "resolved") this.emptyGrainReclaimBytes = null;
+        selector.selected = "original";
+      } else if ((selectOriginal || replaceMethod) && (selector || this.denoiseTiles.size || this.fineGrainReduced?.size)) {
         this.emptyGrainReclaimBytes = null;
         this.denoiseSourceSelector = null;
         this.denoiseTileIdentity = null;
