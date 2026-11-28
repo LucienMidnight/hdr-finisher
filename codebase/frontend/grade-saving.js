@@ -3,6 +3,7 @@
   let current = null, currentPath = null, currentName = null, readySession = null, loadedGrade = false, result = {}, busy = false, saving = false, lastChange = 0, lastToken = "", asking = false, conflictShown = false;
   const byId = id => document.getElementById(id);
   const autosave = () => state.appPreferences?.gradeAutosave !== false;
+  const renderText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
   async function command(action, detail = {}, id = current) {
     const response = await fetch(`/api/library/grade/${id}`, { method: "POST",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...detail }) });
@@ -11,22 +12,23 @@
     return payload;
   }
   function render() {
+    const auto = autosave();
     const button = byId("grade-autosave");
-    button.setAttribute("aria-pressed", String(autosave()));
-    button.querySelector("span").textContent = autosave() ? "Autosave on" : "Autosave off";
+    button.setAttribute("aria-pressed", String(auto));
+    renderText(button.querySelector("span"), auto ? "Autosave on" : "Autosave off");
     const visible = Boolean(current && state.session?.session_id === current);
     byId("grade-saving-controls").hidden = !visible;
     if (!visible) return;
     if (Object.hasOwn(result, "name")) currentName = result.name ? `${state.session.source.filename} · ${result.name}` : null;
-    els.sessionName.textContent = currentName || state.session.source.filename;
+    renderText(els.sessionName, currentName || state.session.source.filename);
     const dirty = state.documentDirty;
     const token = `${state.editRevision}:${state.globalEditGeneration}:${dirty}`;
     if (token !== lastToken) { lastToken = token; lastChange = performance.now(); if (dirty) window.HDRGradeLibraryPictures?.changed(`${state.session?.session_id}:${state.previewGeneration.hdr}:${state.previewGeneration.sdr}:${state.globalEditGeneration}`); }
-    byId("grade-save-state").textContent = result.grade_notice ? "Saving paused — grade needs attention" : result.conflict ? "Saving paused — grade changed elsewhere"
+    renderText(byId("grade-save-state"), result.grade_notice ? "Saving paused — grade needs attention" : result.conflict ? "Saving paused — grade changed elsewhere"
       : result.reason ? "Waiting to write settings — grade kept safely in the Library"
       : saving || result.pending ? "Saving…" : dirty ? "Unsaved changes"
-      : autosave() ? "All changes saved" : "No unsaved changes";
-    byId("grade-save-now").hidden = byId("grade-revert-saved").hidden = autosave() || !dirty;
+      : auto ? "All changes saved" : "No unsaved changes");
+    byId("grade-save-now").hidden = byId("grade-revert-saved").hidden = auto || !dirty;
     byId("grade-resolve-conflict").hidden = !result.conflict;
     const dot = byId("grade-unsaved-dot");
     dot.hidden = !dirty && !result.conflict;

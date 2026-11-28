@@ -111,3 +111,44 @@ test("a delayed hold cannot re-enable Grade after rapid tab changes",async()=>{
   assert.equal(h.requests.length,4);
   assert.ok(h.requests.slice(1).every(r=>!r.paused&&r.grade_active===false));
 });
+
+test("repeated Grade edit notifications keep unchanged save labels intact", async () => {
+  const {c} = harness();
+  const session = {session_id: "photo", source: {filename: "photo.png"}};
+  const nodes = new Map(), writes = [], notifications = [];
+  const textNode = key => ({
+    text: "",
+    get textContent() { return this.text; },
+    set textContent(value) { this.text = value; writes.push([key, value]); },
+  });
+  const node = id => {
+    if (!nodes.has(id)) {
+      const span = textNode(`${id} span`);
+      nodes.set(id, Object.defineProperties(textNode(id), {
+        setAttribute: {value() {}}, querySelector: {value: () => span},
+      }));
+    }
+    return nodes.get(id);
+  };
+  c.document.getElementById = node;
+  c.els = {sessionName: textNode("name")};
+  c.performance = {now: () => 0};
+  c.HDRGradeLibraryPictures = {changed: key => notifications.push(key)};
+  c.fetch = async () => ({ok: true, json: async () => ({session, name: "Copy"})});
+  Object.assign(c.state, {session, documentDirty: false, editRevision: 4,
+    globalEditGeneration: 0, previewGeneration: {hdr: 1, sdr: 2}});
+  await c.HDRGradeSaving.open(session);
+  c.HDRGradeSaving.activated(session);
+  assert.equal(c.els.sessionName.textContent, "photo.png · Copy");
+  assert.equal(node("grade-save-state").textContent, "All changes saved");
+
+  writes.length = 0;
+  c.state.documentDirty = true;
+  c.state.globalEditGeneration++;
+  c.HDRGradeSaving.render();
+  c.state.globalEditGeneration++;
+  c.HDRGradeSaving.render();
+  assert.deepEqual(writes, [["grade-save-state", "Unsaved changes"]]);
+  assert.deepEqual(notifications, ["photo:1:2:1", "photo:1:2:2"]);
+  assert.equal(node("grade-unsaved-dot").hidden, false);
+});
