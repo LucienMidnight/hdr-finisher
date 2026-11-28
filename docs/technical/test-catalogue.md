@@ -357,7 +357,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/test_library_marks.py | Checks library marks behavior and regression contracts. | 16 | 0.9415 | unknown |  |
 | tests/test_library_measurement_identity.py | Checks library measurement identity behavior and regression contracts. | 2 | 0.9061 | unknown |  |
 | tests/test_library_membership.py | Pins/album scope on disposable photos and app data only. | 12 | 2.8214 | unknown |  |
-| tests/test_library_metadata.py | Checks library metadata behavior and regression contracts. | 7 | 0.0745 | unknown |  |
+| tests/test_library_metadata.py | Checks library metadata behavior and regression contracts. | 8 | 0.0745 | unknown |  |
 | tests/test_library_native.py | Checks library native behavior and regression contracts. | 4 | 0.4252 | unknown |  |
 | tests/test_library_os_junk.py | Checks library os junk behavior and regression contracts. | 3 | 0.0682 | unknown |  |
 | tests/test_library_overlay_identity.py | Checks library overlay identity behavior and regression contracts. | 2 | 1.0242 | unknown |  |
@@ -378,7 +378,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/test_library_smart_albums.py | Checks library smart albums behavior and regression contracts. | 16 | 2.9495 | unknown |  |
 | tests/test_library_source_baseline.py | Exercise the measurement driver against real stored scenes in a disposable profile. | 3 | 49.998 | unknown | pytest.mark.skipif(sys.platform == "darwin" and bool(os.environ.get("CI")), reason="Overlap timing assumption does not hold on the macOS CI runner (0.9.2 follow-up).") |
 | tests/test_library_stage_c.py | Stage C recovery on disposable photos, folders, databases and processes. | 17 | 4.8961 | unknown | windows_only; pytest.mark.skipif(os.name != "nt", reason="Windows case-insensitive filename semantics") |
-| tests/test_library_startup_logging.py | Checks library startup logging behavior and regression contracts. | 2 | 0.0466 | unknown |  |
+| tests/test_library_startup_logging.py | Checks library startup logging behavior and regression contracts. | 3 | 0.0466 | unknown | posix_only; pytest.mark.skipif(os.name != "posix", reason="POSIX named semaphore check") |
 | tests/test_library_stopwatch.py | Checks library stopwatch behavior and regression contracts. | 1 | 0.0767 | unknown |  |
 | tests/test_library_test_patterns.py | Checks library test patterns behavior and regression contracts. | 3 | 1.8925 | unknown |  |
 | tests/test_library_trim_concurrency.py | A blocked disk spill must not own the shared transport lock. | 1 | 0.0493 | unknown |  |

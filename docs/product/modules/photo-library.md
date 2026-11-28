@@ -4304,6 +4304,8 @@ Supersedes Part 0d's unconditional quiet gate. Part B remains open.
   already-dispatched EXIF children wait before their next file read/seek.
   Grade/delivery pause and cancellation still take priority. No thread count,
   cache allowance, GPU reservation or image-processing setting changed.
+  Startup does not allocate named semaphores for the EXIF readers. Their
+  shared pause gate exists only once a parallel metadata batch needs workers.
 - Unchanged indexed facts were already retained by byte size and exact
   nanosecond timestamp. The restart regression now creates a fresh index
   object before checking reuse. Inspection used a disposable database copy:

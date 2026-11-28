@@ -114,20 +114,26 @@ def _reader_init(gate=None):
 
 _pool = None
 _pool_lock = Lock()
-_pool_gate = multiprocessing.get_context("spawn").Event()
-_pool_gate.set()
+_pool_gate = None
+_pool_paused = False
 
 def pause_readers(paused):
-    # Also stop already-dispatched EXIF children before their next file read.
-    _pool_gate.clear() if paused else _pool_gate.set()
+    global _pool_paused
+    with _pool_lock:
+        _pool_paused = paused
+        # Also stop already-dispatched EXIF children before their next file read.
+        if _pool_gate is not None:
+            _pool_gate.clear() if paused else _pool_gate.set()
 
 
 def close_readers():
-    global _pool
-    if _pool is not None:
-        _pool_gate.set()
-        _pool.shutdown(wait=True, cancel_futures=True)
-        _pool = None
+    global _pool, _pool_gate, _pool_paused
+    with _pool_lock:
+        if _pool is not None:
+            _pool_gate.set()
+            _pool_paused = False
+            _pool.shutdown(wait=True, cancel_futures=True)
+            _pool = _pool_gate = None
 
 
 atexit.register(close_readers)
@@ -137,19 +143,27 @@ atexit.register(close_readers)
 def read_metadata(paths, cancelled=lambda: False, *, parallel=False, allow_cloud=False):
     """allow_cloud: the user opened this photo, so an online-only file may download."""
     if parallel and len(paths) > 1:
-        global _pool
+        global _pool, _pool_gate
         with _pool_lock:
             if _pool is None:
+                # Spawn Events allocate named semaphores on POSIX. Only the
+                # EXIF pool owner needs one, not every process importing facts.
+                context = multiprocessing.get_context("spawn")
+                gate = context.Event()
+                if not _pool_paused:
+                    gate.set()
                 # Windows multiprocessing is limited to 61 child wait handles; native work can use the remaining CPUs.
                 _pool = ProcessPoolExecutor(max_workers=min(logical_cpus(), 61) if os.name == "nt" else logical_cpus(),
-                    mp_context=multiprocessing.get_context("spawn"), initializer=_reader_init, initargs=(_pool_gate,))
+                    mp_context=context, initializer=_reader_init, initargs=(gate,))
+                _pool_gate = gate
+            pool = _pool
         # Only one wave in flight: pause/foreground checks precede every refill.
         photos = []
         try:
             for start in range(0, len(paths), logical_cpus()):
                 if cancelled():
                     raise CancelledError()
-                pending = [_pool.submit(_read_one, p) for p in paths[start:start+logical_cpus()]]
+                pending = [pool.submit(_read_one, p) for p in paths[start:start+logical_cpus()]]
                 for future in pending:
                     while True:
                         if cancelled():
