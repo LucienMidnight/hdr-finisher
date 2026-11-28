@@ -144,14 +144,16 @@ def rename(source, target, replace=False):
 
 def durable(path, value):
     path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
-    with NamedTemporaryFile(dir=path.parent, delete=False, suffix='.tmp') as f:
-        temporary = Path(f.name)
-        f.write(json.dumps(value, ensure_ascii=False).encode('utf-8'))
-        f.flush(); os.fsync(f.fileno())
+    temporary = None
     try:
+        with NamedTemporaryFile(dir=path.parent, delete=False, suffix='.tmp') as f:
+            temporary = Path(f.name)
+            f.write(json.dumps(value, ensure_ascii=False).encode('utf-8'))
+            f.flush(); os.fsync(f.fileno())
         rename(temporary, path, replace=True)
     finally:
-        temporary.unlink(missing_ok=True)
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def occupied(path, except_path=None):

@@ -17,10 +17,14 @@ def identity(grade):
 
 def atomic_json(path, value):
     path=Path(path); path.parent.mkdir(parents=True,exist_ok=True)
-    with NamedTemporaryFile(dir=path.parent,suffix=".tmp",delete=False) as f:
-        temp=Path(f.name);f.write(json.dumps(value,ensure_ascii=False).encode());f.flush();os.fsync(f.fileno())
-    try: os.replace(temp,path)
-    finally: temp.unlink(missing_ok=True)
+    temp = None
+    try:
+        with NamedTemporaryFile(dir=path.parent,suffix=".tmp",delete=False) as f:
+            temp=Path(f.name);f.write(json.dumps(value,ensure_ascii=False).encode());f.flush();os.fsync(f.fileno())
+        os.replace(temp,path)
+    finally:
+        if temp is not None:
+            temp.unlink(missing_ok=True)
 
 
 class LibraryDocuments:

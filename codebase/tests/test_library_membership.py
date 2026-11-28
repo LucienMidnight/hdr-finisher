@@ -1,7 +1,9 @@
 """Pins/album scope on disposable photos and app data only."""
 import json
+import os
 from pathlib import Path
 from PIL import Image
+import pytest
 from hdr_finisher.library_marks import LibraryMarks, MarkChange
 from hdr_finisher.library_index import LibraryIndex
 from hdr_finisher.library_smart_albums import SmartAlbums
@@ -9,6 +11,26 @@ from hdr_finisher.library_folders import scan_folder, check_kept
 from hdr_finisher.library_metadata import read_metadata
 from hdr_finisher.media_browser import MediaBrowserStore
 from test_library_grades import setup
+
+
+@pytest.mark.parametrize('writer_name', ['atomic_json', 'durable'])
+def test_failed_settings_flush_keeps_old_file_without_leaving_scratch(tmp_path, monkeypatch, writer_name):
+    from hdr_finisher.library_documents import atomic_json
+    from hdr_finisher.library_file_io import durable
+
+    writer = {'atomic_json': atomic_json, 'durable': durable}[writer_name]
+    destination = tmp_path / 'settings.json'
+    previous = b'{"value":1}'
+    destination.write_bytes(previous)
+
+    def fail(_fd):
+        raise OSError('simulated fsync failure')
+
+    monkeypatch.setattr(os, 'fsync', fail)
+    with pytest.raises(OSError, match='simulated fsync failure'):
+        writer(destination, {'value': 2})
+    assert destination.read_bytes() == previous
+    assert list(tmp_path.iterdir()) == [destination]
 
 
 def library(tmp_path):
