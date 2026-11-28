@@ -10093,35 +10093,6 @@
     }
 
     /**
-     * Copy one row chunk into a source texture through a bounded ring of
-     * reusable staging buffers.
-     *
-     * `queue.writeTexture` accumulates every chunk in one Dawn dynamic-uploader
-     * buffer until the eventual render submit; at 42 MP that silently
-     * reconstructs an image-sized staging allocation and exceeds WebGPU's
-     * default 256 MiB maxBufferSize. One mapped buffer per chunk avoids that,
-     * but awaiting `onSubmittedWorkDone()` after each copy serialises the whole
-     * stream behind every chunk: no fetch can start while a copy runs. The only
-     * thing a slot's next write must wait for is that slot's own earlier copy,
-     * and `mapAsync` is exactly that fence. A small ring therefore overlaps
-     * fetches with copies and needs one queue drain at the end of the stream,
-     * not one per chunk.
-     *
-     * Returns the buffer the chunk was written through, so the caller can
-     * release the ring once the stream is done.
-     */
-    async copySourceChunkStaged(ring, retired, slot, data, { bytesPerRow, rows, width, texture, origin }) {
-      return sourceTransport().copyChunkStaged(
-        this, ring, retired, slot, data, { bytesPerRow, rows, width, texture, origin },
-      );
-    }
-
-    /** Release a staging ring once its copies have executed. */
-    async releaseSourceStaging(ring, retired = []) {
-      return sourceTransport().releaseStaging(this, ring, retired);
-    }
-
-    /**
      * Select the transport for an above-budget source frame.
      * Kept on the renderer so a driver can A/B the routes against the same
      * session and a field problem can fall back without a rebuild.

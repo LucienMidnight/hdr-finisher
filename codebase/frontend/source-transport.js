@@ -98,7 +98,12 @@
     });
   }
 
-  /** Copy one row chunk through a reusable mapped staging-buffer slot. */
+  /**
+   * Copy one row chunk through a reusable mapped staging-buffer slot. Mapping
+   * waits only for that slot's previous copy, so we need one queue drain per
+   * transfer, not per chunk. Direct writes would accumulate an image-sized
+   * Dawn upload before the render submits.
+   */
   async function copyChunkStaged(device, assertCurrent, ring, retired, slot, data, {
     bytesPerRow, rows, width, texture, origin, stagingCapacity = 0,
   }) {
@@ -1112,7 +1117,6 @@
     clearCapacityRefusals,
     readChunk,
     SOURCE_TILE_REQUEST_EDGE,
-    copyChunkStaged,
     releaseStaging,
     setMode,
     loadStreaming,
