@@ -173,8 +173,8 @@ non-output-changing ones (an O package) and the runner re-audits.
 
 | ID | Modules (audit `module` ids) | Status | Result |
 | --- | --- | --- | --- |
-| M1 | RAW development (`raw.cleanup`), Lens correction (`raw.lens`, needs a manifest photo with an exact Lensfun profile), Highlight Reconstruction (`raw.highlights`, needs a photo with clipped channels, e.g. `IMG_3129.CR2` or `DSC00264.ARW`) | todo | |
-| M2 | Denoise (`denoise`: `clean_grain`, `standard` "Simple", `micro_grain` "Micro Grain · Experimental"); noisy photo `IMG_0790.CR2` as well | active (review) | |
+| M1 | RAW development (`raw.cleanup`), Lens correction (`raw.lens`, needs a manifest photo with an exact Lensfun profile), Highlight Reconstruction (`raw.highlights`, needs a photo with clipped channels, e.g. `IMG_3129.CR2` or `DSC00264.ARW`) | active (review) | |
+| M2 | Denoise (`denoise`: `clean_grain`, `standard` "Simple", `micro_grain` "Micro Grain · Experimental"); noisy photo `IMG_0790.CR2` as well | review done | 12 findings; bugs for Steve M2-2/M2-3 (stale GPU Micro/Clean Grain tiles at 100% after settings change), M2-10 (Micro Grain stuck on CPU after crop undo); top perf M2-4..M2-7; driver needs per-method ON/OFF + warm re-enable |
 | M3 | Tone (`tone`), Exposure Bands (`bands`), Curves (`curves`), Highlight Compression (`highlight_compression`, recipe must push peaks over the target, e.g. Exposure +3) | active (review) | |
 | M4 | Color sliders (`color`), Color wheels (`wheels`), HSL (`hsl`), Black & White (`bw`), Vignette (`vignette`) | todo | |
 | M5 | Detail (`detail`), Film Look (`film`, including Lens Filter, halation, grain) | todo | |
