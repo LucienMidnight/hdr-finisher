@@ -67,6 +67,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/film-parity-limits.test.js | strict byte cases fail mean drift and keep the existing p99.9 gate | 6 | 1.0525 | unknown |  |
 | tests/film-presets.test.js | all approved Looks replace previous choices and survive sparse save/reopen and stock changes | 6 | 0.0164 | unknown |  |
 | tests/film-select-preview.test.js | arrows are temporary; a changed commit makes exactly one undo to the opening value | 6 | 0.0024 | unknown |  |
+| tests/fit-filtering-compare.test.js | Fit-filtering screenshot metrics, crop extraction and Lanczos resampling | 14 | unknown | 0.0032 |  |
 | tests/font-tokens.test.js | size tokens never go below the minimum | 3 | 0.0938 | unknown |  |
 | tests/geometry-math.test.js | neutral geometry is decided from geometry alone | 9 | 0.0447 | unknown |  |
 | tests/geometry-preview-recovery.test.js | capacity recovery requests the bounded route at the same reduced edge | 8 | 1.0211 | unknown |  |
