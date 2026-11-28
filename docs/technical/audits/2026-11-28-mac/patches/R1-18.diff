@@ -1,0 +1,53 @@
+diff --git a/codebase/desktop/main.js b/codebase/desktop/main.js
+--- a/codebase/desktop/main.js
++++ b/codebase/desktop/main.js
+@@ -1384,8 +1384,13 @@
+       if (!record.window.isDestroyed()) record.window.destroy();
+     }
+     if (backend) {
+-      await fetch(`${backend.url}/api/batch-export/shutdown`, {method:"POST",
+-        headers:{"X-HDR-Finisher-Token":backend.authoringSecret},signal:AbortSignal.timeout(7000)}).catch(()=>{});
++      try {
++        const response = await fetch(`${backend.url}/api/batch-export/shutdown`, {method:"POST",
++          headers:{"X-HDR-Finisher-Token":backend.authoringSecret},signal:AbortSignal.timeout(7000)});
++        if (!response.ok) throw Error(`Delivery shutdown returned HTTP ${response.status}.`);
++      } catch (error) {
++        console.warn("Could not notify the delivery backend of shutdown:", error);
++      }
+     }
+     if (deliveryWindow && !deliveryWindow.isDestroyed()) deliveryWindow.destroy();
+     deliveryWindow = null;
+diff --git a/codebase/desktop/tests/shutdown-diagnostics.test.js b/codebase/desktop/tests/shutdown-diagnostics.test.js
+new file mode 100644
+--- /dev/null
++++ b/codebase/desktop/tests/shutdown-diagnostics.test.js
+@@ -0,0 +1,29 @@
++const test = require("node:test");
++const assert = require("node:assert/strict");
++const fs = require("node:fs");
++const vm = require("node:vm");
++
++const source = fs.readFileSync(require.resolve("../main.js"), "utf8");
++for (const response of [Error("no response"), { ok: false, status: 503 }, { ok: true, status: 200 }]) {
++  test("shutdown completes with delivery status " + (response.status ?? "unavailable"), async () => {
++    const warnings = [];
++    let stopped = 0, quit = 0;
++    const context = vm.createContext({
++      backend: { url: "http://127.0.0.1", authoringSecret: "test" }, AbortSignal, performance,
++      shuttingDown: false, forceClose: false, quitRequested: false, shutdownComplete: false,
++      failedTest: false, windows: new Map(), deliveryWindow: null, backendLogWriter: null,
++      crypto: { randomUUID: () => "test" }, desktopEvent() {},
++      recentProjects: { flush: async () => {} }, gradingPresetIo: Promise.resolve(),
++      async fetch() { if (response instanceof Error) throw response; return response; },
++      async stopBackend() { stopped++; }, app: { quit() { quit++; } },
++      console: { warn: (_message, error) => warnings.push(error) },
++    });
++    vm.runInContext(source.slice(source.indexOf("async function beginShutdown("),
++      source.indexOf("const gotLock = ")), context);
++    await context.beginShutdown();
++    assert.equal(stopped, 1);
++    assert.equal(quit, 1);
++    assert.equal(warnings.length, response.ok ? 0 : 1);
++    if (response instanceof Error) assert.equal(warnings[0], response);
++  });
++}
