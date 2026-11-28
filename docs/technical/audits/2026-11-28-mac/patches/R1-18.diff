@@ -37,7 +37,7 @@ new file mode 100644
 +      shuttingDown: false, forceClose: false, quitRequested: false, shutdownComplete: false,
 +      failedTest: false, windows: new Map(), deliveryWindow: null, backendLogWriter: null,
 +      crypto: { randomUUID: () => "test" }, desktopEvent() {},
-+      recentProjects: { flush: async () => {} }, gradingPresetIo: Promise.resolve(),
++      recentProjects: { flush: async () => {} }, gradingPresetIo: Promise.resolve(), applicationPreferencesCommit: Promise.resolve(),
 +      async fetch() { if (response instanceof Error) throw response; return response; },
 +      async stopBackend() { stopped++; }, app: { quit() { quit++; } },
 +      console: { warn: (_message, error) => warnings.push(error) },

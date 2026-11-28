@@ -1,0 +1,132 @@
+diff --git a/codebase/desktop/main.js b/codebase/desktop/main.js
+--- a/codebase/desktop/main.js
++++ b/codebase/desktop/main.js
+@@ -114,12 +114,20 @@
+   return path.join(app.getPath("userData"), "update-check-cache.json");
+ }
+ 
+-function persistApplicationPreferences() {
+-  fs.mkdirSync(app.getPath("userData"), { recursive: true });
++let applicationPreferencesCommit = Promise.resolve();
++function commitApplicationPreferences(operation) {
++  const result = applicationPreferencesCommit.then(operation);
++  // A rejected write belongs to its caller, not the next settings change.
++  applicationPreferencesCommit = result.catch(() => {});
++  return result;
++}
++
++async function persistApplicationPreferences() {
++  await fs.promises.mkdir(app.getPath("userData"), { recursive: true });
+   const destination = applicationPreferencesPath();
+   const temporary = `${destination}.tmp`;
+-  fs.writeFileSync(temporary, JSON.stringify(applicationPreferences, null, 2));
+-  fs.renameSync(temporary, destination);
++  await fs.promises.writeFile(temporary, JSON.stringify(applicationPreferences, null, 2));
++  await fs.promises.rename(temporary, destination);
+ }
+ 
+ function loadApplicationPreferences() {
+@@ -134,12 +142,17 @@
+ 
+ function setRenderingMode(mode) {
+   if (!["auto", "gpu", "cpu"].includes(mode)) return false;
+-  renderingMode = mode;
+-  applicationPreferences.renderingMode = mode;
+-  persistApplicationPreferences();
+-  buildMenu();
+-  sendCommand("rendering-mode", { mode });
+-  return true;
++  return commitApplicationPreferences(async () => {
++    renderingMode = mode;
++    applicationPreferences.renderingMode = mode;
++    await persistApplicationPreferences();
++    buildMenu();
++    sendCommand("rendering-mode", { mode });
++    return true;
++  }).catch((error) => {
++    console.warn("Could not save the rendering mode:", error);
++    return false;
++  });
+ }
+ 
+ function directoryPreference(key, fallbackName) {
+@@ -788,13 +801,15 @@
+       });
+       if (!response.ok) throw Error(await response.text());
+     }
+-    applicationPreferences = next;
+-    const library = windows.get("library")?.window;
+-    if (library && !library.isDestroyed()) library.webContents.send("desktop:library-window", { action: "theme", theme: applicationPreferences.theme, accent: applicationPreferences.accent, developedBadge: applicationPreferences.developedBadge });
+-    renderingMode = applicationPreferences.renderingMode;
+-    persistApplicationPreferences();
+-    buildMenu();
+-    return applicationPreferences;
++    return commitApplicationPreferences(async () => {
++      applicationPreferences = next;
++      const library = windows.get("library")?.window;
++      if (library && !library.isDestroyed()) library.webContents.send("desktop:library-window", { action: "theme", theme: applicationPreferences.theme, accent: applicationPreferences.accent, developedBadge: applicationPreferences.developedBadge });
++      renderingMode = applicationPreferences.renderingMode;
++      await persistApplicationPreferences();
++      buildMenu();
++      return applicationPreferences;
++    });
+   });
+   handle("desktop:choose-library-cache-directory", async () => {
+     const result = await dialog.showOpenDialog(mainWindow, {title:"Choose Library cache folder", properties:["openDirectory", "createDirectory"]});
+@@ -1398,7 +1413,7 @@
+     } finally {
+       backendLogWriter?.events.flush();
+       if (backendLogWriter) await new Promise(resolve => backendLogWriter.log.end(resolve));
+-      await Promise.all([recentProjects.flush(), gradingPresetIo]);
++      await Promise.all([recentProjects.flush(), gradingPresetIo, applicationPreferencesCommit]);
+       shutdownComplete = true;
+       if (failedTest) app.exit(1);
+       else app.quit();
+diff --git a/codebase/desktop/tests/preferences-storage.test.js b/codebase/desktop/tests/preferences-storage.test.js
+new file mode 100644
+--- /dev/null
++++ b/codebase/desktop/tests/preferences-storage.test.js
+@@ -0,0 +1,43 @@
++const test = require("node:test");
++const assert = require("node:assert/strict");
++const fs = require("node:fs");
++const vm = require("node:vm");
++
++test("overlapping native and renderer preference changes persist and publish in order", async () => {
++  const handlers = new Map(), snapshots = [], commands = [], renames = [];
++  let finishFirstWrite;
++  const file = "application-preferences.json";
++  const source = fs.readFileSync(require.resolve("../main.js"), "utf8");
++  const context = vm.createContext({
++    app: { getPath: () => "." }, applicationPreferences: { renderingMode: "auto" }, renderingMode: "auto",
++    applicationPreferencesPath: () => file, sanitizeApplicationPreferences: value => value,
++    ipcMain: { handle: (name, callback) => handlers.set(name, callback), on() {} },
++    validateSender: () => ({ role: "main" }), windows: new Map(),
++    buildMenu: () => commands.push(context.renderingMode), sendCommand() {},
++    fs: { promises: {
++      async mkdir() {},
++      writeFile(_temporary, text) {
++        snapshots.push(JSON.parse(text));
++        if (snapshots.length === 1) return new Promise(resolve => { finishFirstWrite = resolve; });
++        return Promise.resolve();
++      },
++      async rename(...args) { renames.push(args); },
++    } },
++  });
++  const first = source.indexOf("let applicationPreferencesCommit");
++  vm.runInContext(source.slice(first < 0 ? source.indexOf("function persistApplicationPreferences(") : first,
++    source.indexOf("function directoryPreference(")) +
++    source.slice(source.indexOf("function registerIpc()"), source.indexOf("function updateWindowDocumentState()")) +
++    "\nregisterIpc();", context);
++  const native = context.setRenderingMode("cpu");
++  const renderer = handlers.get("desktop:set-preferences")({}, { renderingMode: "gpu" });
++  await new Promise(resolve => setImmediate(resolve));
++  assert.deepEqual(snapshots, [{ renderingMode: "cpu" }]);
++  assert.deepEqual(commands, []);
++  finishFirstWrite();
++  assert.equal(await native, true);
++  assert.equal((await renderer).renderingMode, "gpu");
++  assert.deepEqual(commands, ["cpu", "gpu"]);
++  assert.deepEqual(snapshots, [{ renderingMode: "cpu" }, { renderingMode: "gpu" }]);
++  assert.deepEqual(renames, [[file + ".tmp", file], [file + ".tmp", file]]);
++});
