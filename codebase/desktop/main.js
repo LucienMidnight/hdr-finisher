@@ -182,6 +182,14 @@ async function pathExists(filePath) {
   }
 }
 
+let gradingPresetIo = Promise.resolve();
+function inGradingPresetOrder(operation) {
+  const result = gradingPresetIo.then(operation);
+  // Return errors to callers without letting one failed operation close the queue.
+  gradingPresetIo = result.catch(() => {});
+  return result;
+}
+
 function cleanGradingPresetPayload(value) {
   const groupId = typeof value?.groupId === "string" ? value.groupId : "";
   const name = typeof value?.name === "string" ? value.name.trim().replace(/\s+/g, " ") : "";
@@ -203,17 +211,20 @@ function gradingPresetFilename(groupId, name) {
 function listGradingPresets(groupId) {
   if (!GRADING_PRESET_GROUPS.has(groupId)) throw new Error("Unknown grading preset group.");
   const directory = gradingPresetDirectory();
-  return fs.readdirSync(directory).filter((filename) => filename.endsWith(".hdrf-grade.json")).slice(0, 500).flatMap((filename) => {
-    try {
-      const source = fs.readFileSync(path.join(directory, filename), "utf8");
-      if (source.length > 200000) return [];
-      const preset = cleanGradingPresetPayload(JSON.parse(source));
-      if (preset.groupId !== groupId) return [];
-      return [{ id: filename, ...preset }];
-    } catch {
-      return [];
+  return inGradingPresetOrder(async () => {
+    const filenames = (await fs.promises.readdir(directory))
+      .filter((filename) => filename.endsWith(".hdrf-grade.json")).slice(0, 500);
+    const presets = [];
+    for (const filename of filenames) {
+      try {
+        const source = await fs.promises.readFile(path.join(directory, filename), "utf8");
+        if (source.length > 200000) continue;
+        const preset = cleanGradingPresetPayload(JSON.parse(source));
+        if (preset.groupId === groupId) presets.push({ id: filename, ...preset });
+      } catch { /* Unreadable or invalid preset files are not listed. */ }
     }
-  }).sort((left, right) => left.name.localeCompare(right.name));
+    return presets.sort((left, right) => left.name.localeCompare(right.name));
+  });
 }
 
 function saveGradingPreset(value) {
@@ -222,23 +233,28 @@ function saveGradingPreset(value) {
   const filename = gradingPresetFilename(preset.groupId, preset.name);
   const destination = path.join(directory, filename);
   const temporary = `${destination}.tmp`;
-  if (fs.existsSync(destination)) {
-    const original = fs.readFileSync(destination);
-    const digest = crypto.createHash("sha256").update(original).digest("hex");
-    const backup = `${destination}.${digest}.backup`;
-    if (!fs.existsSync(backup)) fs.writeFileSync(backup, original, {flag:"wx"});
-  }
-  fs.writeFileSync(temporary, JSON.stringify({ schemaVersion: 1, ...preset }, null, 2));
-  fs.renameSync(temporary, destination);
-  return { id: filename, ...preset };
+  return inGradingPresetOrder(async () => {
+    if (await pathExists(destination)) {
+      const original = await fs.promises.readFile(destination);
+      const digest = crypto.createHash("sha256").update(original).digest("hex");
+      const backup = `${destination}.${digest}.backup`;
+      if (!(await pathExists(backup))) await fs.promises.writeFile(backup, original, {flag:"wx"});
+    }
+    await fs.promises.writeFile(temporary, JSON.stringify({ schemaVersion: 1, ...preset }, null, 2));
+    await fs.promises.rename(temporary, destination);
+    return { id: filename, ...preset };
+  });
 }
 
 function deleteGradingPreset(presetId) {
   if (typeof presetId !== "string" || path.basename(presetId) !== presetId || !presetId.endsWith(".hdrf-grade.json")) {
     throw new Error("Invalid grading preset.");
   }
-  fs.rmSync(path.join(gradingPresetDirectory(), presetId), { force: true });
-  return true;
+  const file = path.join(gradingPresetDirectory(), presetId);
+  return inGradingPresetOrder(async () => {
+    await fs.promises.rm(file, { force: true });
+    return true;
+  });
 }
 
 function semverParts(version) {
@@ -1382,7 +1398,7 @@ async function beginShutdown() {
     } finally {
       backendLogWriter?.events.flush();
       if (backendLogWriter) await new Promise(resolve => backendLogWriter.log.end(resolve));
-      await recentProjects.flush();
+      await Promise.all([recentProjects.flush(), gradingPresetIo]);
       shutdownComplete = true;
       if (failedTest) app.exit(1);
       else app.quit();
