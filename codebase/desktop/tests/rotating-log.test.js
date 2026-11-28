@@ -4,6 +4,31 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {create} = require('../lib/rotating-log');
+const { createRequire } = require('node:module');
+const { Writable } = require('node:stream');
+const vm = require('node:vm');
+
+test('desktop diagnostics remain usable if the log directory cannot be opened', async t => {
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'hdr-bad-log-'));
+ t.after(() => fs.rmSync(dir,{recursive:true,force:true}));
+ fs.writeFileSync(path.join(dir,'logs'),'leave this alone');
+ const errors=[];
+ const main=require.resolve('../main.js');
+ const source=fs.readFileSync(main,'utf8');
+ const context=vm.createContext({
+  path, process, Writable, require:createRequire(main),
+  app:{getPath:()=>dir}, console:{error:(...args)=>errors.push(args)},
+ });
+ vm.runInContext(source.slice(source.indexOf('let backendLogWriter;'),source.indexOf('async function recordSessionHeader')),context);
+ context.libraryStage('app_start');
+ context.desktopEvent('app','action_started');
+ const {log,events}=context.getBackendLogWriter();
+ events.backend('backend output',42);
+ events.flush();
+ await new Promise((resolve,reject) => log.end(error => error ? reject(error) : resolve()));
+ assert.equal(errors.length,1);
+ assert.equal(fs.readFileSync(path.join(dir,'logs'),'utf8'),'leave this alone');
+});
 test('rotation bounds old logs, oversized writes and restart', () => {
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'hdr-log-'));
  try {

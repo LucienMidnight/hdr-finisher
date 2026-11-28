@@ -6,6 +6,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const readline = require("node:readline");
+const { Writable } = require("node:stream");
 const {
   allowedDocumentationUrl,
   allowedProjectUrl,
@@ -320,7 +321,14 @@ let backendLogWriter;
 function getBackendLogWriter() {
   if (!backendLogWriter) {
     const logPath = path.join(app.getPath("userData"), "logs", "backend.log");
-    const log = require("./lib/rotating-log").create(logPath, {backups:7}).stream;
+    let log;
+    try {
+      log = require("./lib/rotating-log").create(logPath, {backups:7}).stream;
+    } catch (error) {
+      // Startup and shutdown must still run when diagnostics cannot be opened.
+      console.error("Could not initialize backend diagnostics:", error.message);
+      log = new Writable({ write(_chunk, _encoding, done) { done(); } });
+    }
     const write = require("./lib/backend-log").create(log);
     backendLogWriter = {log, write, events: require("./lib/event-log").create(write), logPath};
   }
@@ -356,10 +364,7 @@ async function startBackend() {
   const authoringSecret = randomSecret();
   const controlSecret = randomSecret();
   const command = backendCommand();
-  const logsDirectory = path.join(app.getPath("userData"), "logs");
-  fs.mkdirSync(logsDirectory, { recursive: true });
-  const logPath = path.join(logsDirectory, "backend.log");
-  const {log, write:writeBackendLog, events} = getBackendLogWriter();
+  const {log, logPath, write:writeBackendLog, events} = getBackendLogWriter();
   sweepProofScratch(os.tmpdir());
   const proofScratchRoot = createProofScratch(os.tmpdir());
   const current = backendProcess = { authoringSecret, controlSecret, log, logPath, proofScratchRoot };
