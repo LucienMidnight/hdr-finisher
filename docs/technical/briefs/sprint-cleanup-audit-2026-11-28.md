@@ -104,8 +104,8 @@ code, and checkable with targeted fast tests. Everything else is recorded as
 
 | ID | Scope | Status | Result |
 | --- | --- | --- | --- |
-| H1 | New test driver `codebase/tests/performance/grade-module-impact.js`, registered in `tests/release/drivers.json` (tier `diagnostic`, area `preview`). Writes `module-impact-v1` JSON (see `docs/technical/audits/README.md`) | todo | |
-| H2 | `codebase/tools/audit-summary.cjs`: merges `findings-<PKG>.jsonl` into `findings.jsonl`, validates both formats, writes the markdown summary (impact matrix, flags, regressions against an earlier run on the same machine) | todo | |
+| H1 | New test driver `codebase/tests/performance/grade-module-impact.js`, registered in `tests/release/drivers.json` (tier `diagnostic`, area `preview`). Writes `module-impact-v1` JSON (see `docs/technical/audits/README.md`) | done | `279707b5`, `3f1fd3eb`; locked smoke passed (baseline + tone, typical, Fit) |
+| H2 | `codebase/tools/audit-summary.cjs`: merges `findings-<PKG>.jsonl` into `findings.jsonl`, validates both formats, writes the markdown summary (impact matrix, flags, regressions against an earlier run on the same machine) | done | `46672b15`; validated 59 live findings |
 | H3 | Calibration, machine otherwise idle: `baseline` + `tone` on the typical photo and `film` + `denoise` on the large photo, 2 samples. Proves the JSON, the summary, pixel-change detection and resume; projects the Phase 3 duration | todo | |
 
 H1 requirements:
@@ -174,7 +174,7 @@ non-output-changing ones (an O package) and the runner re-audits.
 | ID | Modules (audit `module` ids) | Status | Result |
 | --- | --- | --- | --- |
 | M1 | RAW development (`raw.cleanup`), Lens correction (`raw.lens`, needs a manifest photo with an exact Lensfun profile), Highlight Reconstruction (`raw.highlights`, needs a photo with clipped channels, e.g. `IMG_3129.CR2` or `DSC00264.ARW`) | todo | |
-| M2 | Denoise (`denoise`: `clean_grain`, `standard` "Simple", `micro_grain` "Micro Grain · Experimental"); noisy photo `IMG_0790.CR2` as well | todo | |
+| M2 | Denoise (`denoise`: `clean_grain`, `standard` "Simple", `micro_grain` "Micro Grain · Experimental"); noisy photo `IMG_0790.CR2` as well | active (review) | |
 | M3 | Tone (`tone`), Exposure Bands (`bands`), Curves (`curves`), Highlight Compression (`highlight_compression`, recipe must push peaks over the target, e.g. Exposure +3) | todo | |
 | M4 | Color sliders (`color`), Color wheels (`wheels`), HSL (`hsl`), Black & White (`bw`), Vignette (`vignette`) | todo | |
 | M5 | Detail (`detail`), Film Look (`film`, including Lens Filter, halation, grain) | todo | |
