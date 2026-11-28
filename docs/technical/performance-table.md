@@ -21,6 +21,20 @@ the 25 ms target. It predates symmetric weight reuse (`e8c183db`). GPU timing
 and delivery checks of that final version are pending because macOS could not
 allocate a named semaphore for the app backend.
 
+On the same Neo, forced-CPU native SDR JPEG export (quality 90, decoded source,
+same Film recipe, Grain off). Three interleaved samples per version measured
+with the shared lock, changing only the Mist kernel from `aee3d656` to
+`7e689ff3`. Times in seconds are medians (ranges).
+
+| Photo | Whole export before → after | Mist stage before → after |
+| --- | ---: | ---: |
+| IMG_7723.CR3, 24 MP | 21.21 (20.93–27.14) → 19.69 (17.64–22.11) | 5.41 (5.01–7.48) → 4.96 (4.84–5.81) |
+| DSC00636.ARW, 50 MP | 39.94 (39.72–42.08) → 41.18 (39.70–41.54) | 10.64 (10.40–13.84) → 10.59 (10.23–11.07) |
+
+The 24 MP export median was 7.2% shorter and the 50 MP median was 3.1% longer.
+The ranges overlap at both sizes, so this does not establish a reliable CPU
+export speedup. Full-size CPU convolution retains the same bounded FFT blocks.
+
 ## November 28, 2026 — Grade audit first presented GPU frame
 
 MacBook Neo, A18 Pro, 8 GB, 1408×794 at 2×, mains power, shared GPU lock.
