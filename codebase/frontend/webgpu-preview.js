@@ -41,7 +41,7 @@
 
   function fineGrainStripUpload(device, maxWidth, maxRows) {
     const chunkBytes = Math.min(8 * 1024 * 1024, device.limits.maxBufferSize);
-    return { maxWidth, maxRows, slots: 2, chunkBytes, ring: [], retired: [] };
+    return { device, maxWidth, maxRows, slots: 2, chunkBytes, ring: [], retired: [] };
   }
 
   function grainWorkRefused(reason, message, details) {
@@ -7370,7 +7370,7 @@
     }
 
     async releaseFineGrainStrip(upload) {
-      await sourceTransport().releaseStaging(this, upload.ring, upload.retired);
+      await sourceTransport().releaseStaging(upload.device, upload.ring, upload.retired);
       upload.texture?.destroy();
     }
 
