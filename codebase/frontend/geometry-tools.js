@@ -46,12 +46,11 @@ async function ensureGeometryCoordinateMap(longEdge = settledProxyLongEdge(), { 
   if (cached) return cached;
   const editRevision = state.editRevision;
   const requestKey = `${key}:${editRevision}`;
-  const adjustments = JSON.parse(JSON.stringify(state.adjustments));
   const transport = window.HDRSourceTransport;
   const request = geometryCoordinateMapRequests.get(requestKey) || transport.withCapacityBackoff(geometryMapCapacityRefusals, requestKey, () => fetch(`/api/session/${state.session.session_id}/geometry-map`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ adjustments, edit_revision: editRevision, long_edge: longEdge }),
+    body: JSON.stringify({ adjustments: state.adjustments, edit_revision: editRevision, long_edge: longEdge }),
   }).then(async (response) => {
     if (!response.ok) throw await transport.sourceResponseError(response, `Geometry coordinate map failed (${response.status}).`);
     const payload = await response.json();

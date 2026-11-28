@@ -147,12 +147,15 @@ test("a newer geometry-map request does not join a stale edit or keep session ba
   });
   vm.runInContext(frontendSource("source-transport.js") + "\n" + frontendSource("geometry-tools.js"), context);
   const old = context.ensureGeometryCoordinateMap(1920, { reportFailure: true });
+  const joined = context.ensureGeometryCoordinateMap(1920);
   state.editRevision = 8;
   const newest = context.ensureGeometryCoordinateMap(1920, { reportFailure: true });
   oldRequest.resolve({ ok: false, status: 409, json: async () => ({ detail: "Stale" }) });
   await assert.rejects(old, { status: 409 });
+  assert.equal(await joined, null);
   assert.equal((await newest).outputWidth, 1917);
   assert.deepEqual(requests.map(request => request.edit_revision), [7, 8]);
+  assert.deepEqual(requests[0].adjustments, state.adjustments);
 
   capacityAvailable = false;
   await assert.rejects(context.ensureGeometryCoordinateMap(2560, { reportFailure: true }), { status: 507 });
