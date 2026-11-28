@@ -136,7 +136,7 @@ The highest measured process peak was **641.9 MiB** during the Canon finalist co
 
 ## Native crops and reproduction
 
-The [review gallery][review] shows Off, Clean Grain, round 3, round 4 and the Canon-only DxO Standard at native dimensions. It includes the dark patches, floor, face, forehead, skirt, flame, hair, marks and atrium lights. The two Sony sections show hair, face detail and dark flats. Run [reproduce.sh][runner] from `codebase` with the round 3 staged crop cache in place. It writes the final JSON, six-strength sweep and gallery, then checks continuity and crop dimensions. [Initial method screen][screen] · [Finalist ablations][finalists]
+The [review gallery][review] shows Off, Clean Grain, round 3, round 4 and the Canon-only DxO Standard at native dimensions. It includes the dark patches, floor, face, forehead, skirt, flame, hair, marks and atrium lights. The two Sony sections show hair, face detail and dark flats. Run [reproduce.sh][runner] from `codebase` with the local trial source and staged crop cache from [Round 3](predemosaic-round3.md) in place. The runner writes the final JSON, six-strength sweep and gallery to the [output folder][output], then checks continuity and crop dimensions. [Initial method screen][screen] · [Finalist ablations][finalists]
 
 [output]: ../../../../codebase/output/predemosaic-round4-2026-11-20/
 [review]: ../../../../codebase/output/predemosaic-round4-2026-11-20/review.html
@@ -150,7 +150,7 @@ The [review gallery][review] shows Off, Clean Grain, round 3, round 4 and the Ca
 [atrium-crop]: ../../../../codebase/output/predemosaic-round4-2026-11-20/review.html#atrium
 [sweep-view]: ../../../../codebase/output/predemosaic-round4-2026-11-20/review.html#sweep
 [sweep]: ../../../../codebase/output/predemosaic-round4-2026-11-20/canon-sweep.json
-[runner]: ../../../../codebase/output/predemosaic-round4-2026-11-20/reproduce.sh
+[runner]: ../../../../codebase/tools/denoise_eval/round4/reproduce.sh
 [screen]: ../../../../codebase/output/predemosaic-round4-2026-11-20/canon-screen.json
 [finalists]: ../../../../codebase/output/predemosaic-round4-2026-11-20/canon-candidates.json
 [repro-log]: ../../../../codebase/output/predemosaic-round4-2026-11-20/reproduction.log

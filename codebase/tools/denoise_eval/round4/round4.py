@@ -6,8 +6,9 @@ import sys
 
 from PIL import Image
 
-HERE = Path(__file__).resolve().parent
-ROUND3 = HERE.with_name('predemosaic-round3-2026-11-20')
+OUTPUT = Path(__file__).resolve().parents[3] / 'output'
+HERE = OUTPUT / 'predemosaic-round4-2026-11-20'
+ROUND3 = OUTPUT / 'predemosaic-round3-2026-11-20'
 sys.path.insert(0, str(ROUND3))
 
 import trial as prior
@@ -293,7 +294,7 @@ def screen(tag, methods):
 
 def write_crop(name, rgb, ev):
     path = HERE/'crops'/f'{name}.png'
-    path.parent.mkdir(exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(dxo.measure.display(rgb,ev)).save(path)
     return path
 

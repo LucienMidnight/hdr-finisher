@@ -4,7 +4,7 @@ from html import escape
 import json
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parents[3] / 'output' / 'predemosaic-round4-2026-11-20'
 TAG_NAMES = {'canon':'Canon 7D · ISO 3200', 'sony':'Sony portrait · ISO 6400',
              'ordinary':'Sony holdout · ISO 10000', 'atrium':'Atrium · ISO 800'}
 LABELS = {'developed':'Off', 'clean':'Clean Grain', 'round3':'Round 3', 'round4':'Round 4',
