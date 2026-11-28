@@ -18,6 +18,59 @@ vm.runInContext(shaderSource, context);
 vm.runInContext(source, context);
 const Preview = context.window.HDRWebGPUPreview;
 
+for (const [name, options] of [
+  ["bypass", {}],
+  ["method replacement", { selectOriginal: false, replaceMethod: true }],
+]) {
+  test(`committed Denoise ${name} retires only Denoise pixels before the next render`, async () => {
+    const preview = new Preview(null);
+    const released = [];
+    const texture = label => ({ destroy: () => released.push(label) });
+    let finishGpuWork;
+    const fence = new Promise(resolve => { finishGpuWork = resolve; });
+    preview.device = { queue: { onSubmittedWorkDone: () => fence } };
+    const original = { texture: texture("source") };
+    const accepted = { texture: texture("accepted") };
+    preview.proxies.set("source", original);
+    preview.lastPresentedFrame = accepted;
+    const warmModel = preview.denoiseModelWarm = {};
+    const selector = preview.denoiseSourceSelector = {
+      selected: "resolved", original,
+      resolved: { texture: texture("resolved") },
+      cache: { adaptiveScratch: { textures: { current: texture("scratch") } } },
+    };
+    preview.denoiseTiles.set("old-token", { texture: texture("old-token") });
+    preview.denoiseTiles.set("unmarked-endpoint", { texture: texture("endpoint"), endpoints: true });
+    preview.fineGrainReduced = new Map([["old-reduced", { texture: texture("reduced") }]]);
+
+    preview.selectDenoiseSelectorSource(false);
+    preview.selectDenoiseSelectorSource(true);
+    preview.cancelDenoiseProcessing({ selectOriginal: false });
+    assert.equal(preview.denoiseSourceSelector, selector);
+    assert.deepEqual(released, []);
+
+    preview.activeRenderCount = 1;
+    preview.cancelDenoiseProcessing(options);
+    assert.equal(preview.denoiseSourceSelector, null);
+    assert.equal(preview.denoiseTiles.size, 0);
+    assert.equal(preview.fineGrainReduced.size, 0);
+    assert.deepEqual(released, []);
+    let rendered = false;
+    preview.renderToFrame = () => { rendered = true; };
+    const next = preview.renderTo({});
+    preview.finishActiveRender();
+    await Promise.resolve();
+    assert.equal(rendered, false);
+    assert.deepEqual(released.sort(), ["endpoint", "old-token", "reduced", "resolved", "scratch"]);
+    finishGpuWork();
+    await next;
+    assert.equal(rendered, true);
+    assert.equal(preview.proxies.get("source"), original);
+    assert.equal(preview.lastPresentedFrame, accepted);
+    assert.equal(preview.denoiseModelWarm, warmModel);
+  });
+}
+
 test("direct model reproduces the approved two-level 24MP logical baseline", () => {
   const model = Preview.directPreviewMemoryModel(6000, 4000);
 

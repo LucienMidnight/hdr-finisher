@@ -2666,6 +2666,7 @@
     }
 
     async renderTiledTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
+      while (this.denoiseRetirement) await this.denoiseRetirement;
       if (!this.available || !this.device) return false;
       if (this.geometryUnderlayerRender) await this.stopGeometryUnderlayerRender();
       const Scheduler = typeof window !== "undefined" ? window.HDRTileScheduler : null;
@@ -4804,6 +4805,9 @@
       // The denoised picture for one region, left in the graph's source
       // texture: copied from a kept tile, or reconstructed and kept.
       const denoiseInto = async (region) => {
+        if (denoiseSelector !== this.denoiseSourceSelector) {
+          throw new DOMException("Denoise draw cancelled.", "AbortError");
+        }
         if (options.fineGrainReduced) {
           encoder.copyTextureToTexture({ texture: options.fineGrainReduced.texture, origin: region }, {
             texture: noiseView ? graph.denoiseResolvedTexture : graph.sourceTexture,
@@ -5596,6 +5600,7 @@
     }
 
     async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
+      while (this.denoiseRetirement) await this.denoiseRetirement;
       const renderFrame = () => this.renderToFrame(canvas, sessionId, lane, adjustments, curveSampler, longEdge,
         localAdjustments, editRevision, maskOverlay, referenceWhiteNits, sourceSize, sourceOptions);
       if (!sourceOptions?.backgroundUnderlayer) {
@@ -6622,6 +6627,8 @@
       const geometrySignature = JSON.stringify(adjustments?.shared?.geometry || {});
       const frame = { identity: `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}`, sourceIdentity };
       try {
+        while (this.denoiseRetirement) await this.denoiseRetirement;
+        if (controller.signal.aborted || options.signal?.aborted || options.isCurrent?.() === false) return false;
         const settings = {
           amount: controls.amount ?? 0.75,
           luminance: controls.luminance ?? 0.5,
@@ -8066,7 +8073,7 @@
         generation,
       };
       this.setDenoiseControls(controls);
-      this.destroyDenoiseSelector(previous);
+      this.destroyAfterActiveRenders(() => this.destroyDenoiseSelector(previous));
       this.denoiseCounters.allocations += cache.textureCount;
       this.denoiseCounters.allocatedBytes += cache.byteSize;
       this.denoiseCounters.evidenceBytes = 0;
@@ -8634,18 +8641,35 @@
       return true;
     }
 
-    cancelDenoiseProcessing({ selectOriginal = true } = {}) {
+    cancelDenoiseProcessing({ selectOriginal = true, replaceMethod = false } = {}) {
       const generation = ++this.denoiseSelectorGeneration;
       this.denoisePreparationController?.abort();
-      if (selectOriginal && this.denoiseSourceSelector) {
-        if (this.denoiseSourceSelector.selected === "resolved") this.emptyGrainReclaimBytes = null;
-        this.denoiseSourceSelector.selected = "original";
+      const selector = this.denoiseSourceSelector;
+      if ((selectOriginal || replaceMethod) && (selector || this.denoiseTiles.size || this.fineGrainReduced?.size)) {
+        this.emptyGrainReclaimBytes = null;
+        this.denoiseSourceSelector = null;
+        this.denoiseTileIdentity = null;
+        this.dropDenoiseTiles();
+        this.releaseFineGrainReduced();
+        this.denoiseCounters.resolveScratchBytes = 0;
+        const queue = this.device?.queue;
+        // Detached owners cannot be picked up by the next render. Existing
+        // encoders may still hold them, so let those unwind before fencing
+        // the submissions and allowing the next Grade admission.
+        const retired = new Promise(resolve => this.destroyAfterActiveRenders(() => {
+          this.destroyDenoiseSelector(selector);
+          resolve();
+        })).then(() => queue?.onSubmittedWorkDone()).catch(() => {});
+        const pending = Promise.all([this.denoiseRetirement, retired]).finally(() => {
+          if (this.denoiseRetirement === pending) this.denoiseRetirement = null;
+        });
+        this.denoiseRetirement = pending;
       }
       this.recordStage("denoise-cancel", {
         generation,
         source: this.denoiseSourceSelector?.selected || "none",
       });
-      return Boolean(this.denoiseSourceSelector);
+      return Boolean(selector);
     }
 
     async readDenoiseSelectorPixel() {
