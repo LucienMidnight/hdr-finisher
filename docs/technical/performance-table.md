@@ -1,3 +1,23 @@
+## November 28, 2026 — v0.9.4 installed Mac Library log review
+
+One live session of the installed `v0.9.4` (`3d585bee`) on the MacBook Neo,
+A18 Pro, 8 GB unified memory, 4 GB app ceiling. Local time 10:17–10:21.
+Times are from existing desktop/backend logs, not a controlled benchmark.
+
+| Action | Observed time | Conditions |
+| --- | --- | --- |
+| Open noisy photos, show a camera preview and then the eight fresh grid thumbnails | First camera preview 0.50 s after folder click; finished thumbnails 19.26–42.35 s from their grid requests | Source queue 16.63–38.89 s, admitted preparation/development and handoff 0.80–2.90 s. For DSC05293 and _DSC7970, the queue took 34.64 of 38.15 s and 38.89 of 42.35 s respectively. Both were held by the existing 2 GB system reserve and finished on the GPU route. |
+| Open HDR Test Images and show uncached grid thumbnails | 6.40–16.00 s on initial visit; 1.17–2.66 s for two previously cancelled RAW requests and 18.64 s for DSC01287.exr on return | The EXR queued for 16.78 s on the system reserve and ran for 1.63 s, after startup upkeep had already finished. Two prior slow RAWs (DSC01204 and DSC01244) restored their finished thumbnails in 0.11 s on return. |
+
+All 16 fresh grid thumbnails in this trace completed on the GPU route, with
+no CPU fallback. Two float TIFFs had no embedded JPEG stand-in. Finished
+thumbnail cache keys changed from v3 to v7 between `v0.9.3` and `v0.9.4`,
+requiring regeneration on first use after upgrade. That increases the number
+of jobs needing memory, but reopening does not bypass the reserve for pictures
+still missing from the cache. The observed limit is admission before source
+development, not a stalled GPU. The historical grant records do not identify
+what held system memory at admission. No app, cache, or memory policy changed.
+
 ## November 28, 2026 — v0.9.4 Mac release rechecks
 
 MacBook Neo, A18 Pro, 8 GB, at 1408×794. Standalone Electron runs under the shared GPU lock.
