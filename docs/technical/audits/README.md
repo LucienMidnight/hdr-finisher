@@ -20,7 +20,11 @@ First run: [sprint brief, November 28, 2026](../briefs/sprint-cleanup-audit-2026
    ```
 
    Repeat for `--photo large`, and `--zoom 100` for the modules listed in the
-   brief. (`.venv/Scripts/python.exe` on Windows.)
+   brief. At Fit, the typical and large aliases use `_DSC7970.ARW` for Lens
+   and `IMG_3129.CR2` for Highlight Reconstruction. An explicit path always
+   wins. Use `--module denoise --photo noisy --zoom fit` for the additional
+   `IMG_0790.CR2` Denoise run. Add `--resume` to continue an existing run.
+   (`.venv/Scripts/python.exe` on Windows.)
 3. Summarise and compare with the previous run on the same machine:
 
    ```sh
@@ -82,6 +86,7 @@ One JSON object per line:
     {
       "module": "film",
       "lane": "hdr",
+      "photo": { "role": "typical", "file": "IMG_7723.CR3", "sha256": "<hash>", "megapixels": 24.2 },
       "recipe": { "film-stock": "<id>", "film-look-strength": 0.8 },
       "recipeHash": "<sha256 of canonical recipe JSON>",
       "offMethod": "eye",
@@ -89,6 +94,7 @@ One JSON object per line:
       "pixelsChanged": true,
       "loadAverage": [0, 0, 0],
       "denoiseRebuilds": 0,
+      "durationSec": 0,
       "status": "complete",
       "errors": [],
       "steps": [
@@ -123,8 +129,22 @@ One JSON object per line:
 
 - `kind`: `own` (the module's own controls, isolated), `probe` (common
   control run with the module on and off), `cold` (first preparation, e.g.
-  first Denoise). Tone's OFF-state Tone probes and Denoise's OFF-state Denoise
-  probes are not run (self-reference).
+  first Denoise, one sample before priming). If preparation is already
+  resident, the cold row explains why it wasn't timed. Tone's OFF-state Tone
+  probes and Denoise's OFF-state Denoise probes are not run (self-reference).
+- Run-level `photo` is the requested photo. Module-level `photo` is the
+  actual source and uses role `override` for a module-specific fixture. Older
+  v1 rows without a module photo inherit the run photo. Regression comparisons
+  require the same actual source hash.
+- `samplesDetail` records the route, processed long edge, Denoise preparation
+  identity and separate counts for selector setups, Fit misses, exact reduced
+  misses and CPU preparation misses. RAW steps also record Apply phases when
+  available. `rawStates` records the developed ON/OFF routes and phases before
+  priming. Denoise `methods` records each control map's hash, settled ON/OFF
+  signatures, and any eligibility skip.
+- `reducedSamples` records accepted reduced CPU fallbacks with requested and
+  actual long edges, reason, timing, signature and memory. Their timings do
+  not count toward the regular step statistics.
 - Timing: `first_feedback_ms` runs from the control's first `input` event to
   the first GPU-fenced frame current at completion; `settle_ms` from release to
   the last current exact on-screen frame; `drained_ms` from release until

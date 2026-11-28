@@ -84,6 +84,27 @@ test('rejects wrong recipe hashes, timing statistics and p95 below ten samples',
   assert.throws(() => validateRun(run), /recipeHash/);
 });
 
+test('validates actual module photos, and does not pair a reduced CPU sample with an exact sample', () => {
+  const run = fixture(), [m] = run.modules;
+  m.photo = { role: 'override', file: '_DSC7970.ARW', sha256: 'b'.repeat(64), megapixels: 33 };
+  const [on] = m.steps;
+  on.reducedSamples = [{ route: 'cpu-reduced', requestedLongEdge: 1408, actualLongEdge: 1024,
+    reason: 'Denoise is using the CPU.', first_feedback_ms: null, settle_ms: 1700, drained_ms: 1900,
+    whole_wait_ms: 1720, signature: on.signature, memory_mb: on.memory_mb }];
+  on.processedLongEdge = 0;
+  on.first_feedback_ms = on.settle_ms = on.drained_ms = stats([]);
+  assert.equal(validateRun(run), run);
+  assert.deepEqual(impacts(m, run), []);
+  on.reducedSamples[0].actualLongEdge = 1408;
+  assert.throws(() => validateRun(run), /actualLongEdge/);
+  on.reducedSamples[0].actualLongEdge = 1024;
+  m.photo.role = 'typical';
+  assert.throws(() => validateRun(run), /modules\[0\]\.photo/);
+  m.photo.role = 'override';
+  m.photo.sha256 = 'invalid';
+  assert.throws(() => validateRun(run), /photo.sha256/);
+});
+
 test('merges findings, replaces an older merged file, and emits grouped counts and impact flags', t => {
   const [run, , write] = dirs(t);
   writeJson(run, filename, fixture());

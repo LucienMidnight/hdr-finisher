@@ -18,6 +18,7 @@ const CLOCKS = ['first_feedback_ms', 'settle_ms', 'drained_ms'];
 const MEMORY = ['footprint_baseline', 'footprint_peak', 'renderer_peak', 'backend_peak',
   'gpu_process_peak', 'webgpu_allocator_peak'];
 const PHOTO_ROLES = ['typical', 'large', 'noisy', 'path'];
+const actualPhoto = (m, run) => m.photo ?? run.photo;
 const MACHINE_KEYS = ['name', 'platform', 'chip', 'ramGiB', 'window', 'dpr',
   'powerSource', 'powerMode', 'gpuAdapter'];
 const MACHINE_ID_KEYS = MACHINE_KEYS.slice(0, 4);
@@ -125,7 +126,8 @@ function validateRun(run, where = 'module-impact-v1') {
     dpr: x => num(x) && x > 0, powerSource: string, powerMode: string, gpuAdapter: string,
   }, `${where}.machine`);
   fields(run.app, { version: string, commit: string, dirty: boolean }, `${where}.app`);
-  fields(run.photo, { role: oneOf(...PHOTO_ROLES), file: string, sha256: hex, megapixels: x => num(x) && x > 0 }, `${where}.photo`);
+  const photoFields = { file: string, sha256: hex, megapixels: x => num(x) && x > 0 };
+  fields(run.photo, { role: oneOf(...PHOTO_ROLES), ...photoFields }, `${where}.photo`);
   fields(run.noise, { baseline_start: object, baseline_middle: object, baseline_end: object, spread_pct: nonnegative }, `${where}.noise`);
   // The README leaves the baseline dictionaries open. Validate probe metrics
   // when present, and allow an empty (not captured) checkpoint.
@@ -143,6 +145,12 @@ function validateRun(run, where = 'module-impact-v1') {
       offMethod: oneOf('eye', 'neutral', 'setting'), alternation: oneOf('interleaved', 'blocked'),
       pixelsChanged: boolean, loadAverage: x => array(nonnegative)(x) && x.length === 3,
       denoiseRebuilds: integer, status: string, errors: array(string), steps: array(object), impact: array(object) }, at);
+    // Older v1 runs recorded only the run-level photo.
+    if ('photo' in m) {
+      fields(m.photo, { role: oneOf(...PHOTO_ROLES, 'override'), ...photoFields }, `${at}.photo`);
+      if (m.photo.role !== 'override')
+        need(m.photo, p => p.role === run.photo.role && p.file === run.photo.file && p.sha256 === run.photo.sha256, `${at}.photo`);
+    }
     need(m.recipeHash, x => x === recipeHash(m.recipe), `${at}.recipeHash`);
     unique(m.steps, s => `${s.step}/${s.state}`, `${at}.steps`);
     unique(m.impact, x => x.probe, `${at}.impact`);
@@ -151,15 +159,25 @@ function validateRun(run, where = 'module-impact-v1') {
       fields(s, { step: string, kind: oneOf('own', 'probe', 'cold'), state: oneOf('on', 'off'),
         processedLongEdge: integer, route: nullable(string), fallbacks: array(string), signature: nullable(string),
         memory_mb: object, skipped: nullable(string), errors: array(string) }, stepAt);
-      const count = m.alternation === 'blocked' ? 3 : s.kind === 'cold' ? 1 : run.samples;
-      for (const key of CLOCKS) validateStats(s[key], `${stepAt}.${key}`, count);
-      if ('whole_wait_ms' in s) validateStats(s.whole_wait_ms, `${stepAt}.whole_wait_ms`, count);
+      const count = s.kind === 'cold' ? 1 : m.alternation === 'blocked' ? 3 : run.samples;
+      const reduced = 'reducedSamples' in s ? s.reducedSamples : [];
+      need(reduced, x => array(object)(x) && x.length <= count, `${stepAt}.reducedSamples`);
+      for (const [k, sample] of reduced.entries()) {
+        const sampleAt = `${stepAt}.reducedSamples[${k}]`;
+        fields(sample, { route: oneOf('cpu-reduced'), reason: string, requestedLongEdge: integer,
+          actualLongEdge: x => integer(x) && x > 0 && x < sample.requestedLongEdge,
+          first_feedback_ms: nullable(nonnegative), settle_ms: nonnegative, drained_ms: nonnegative,
+          whole_wait_ms: nonnegative, signature: string, memory_mb: object }, sampleAt);
+      }
+      const exactCount = count - reduced.length;
+      for (const key of CLOCKS) validateStats(s[key], `${stepAt}.${key}`, exactCount);
+      if ('whole_wait_ms' in s) validateStats(s.whole_wait_ms, `${stepAt}.whole_wait_ms`, exactCount);
       fields(s.memory_mb, Object.fromEntries(MEMORY.map(key => [key, nullable(nonnegative)])), `${stepAt}.memory_mb`);
       if (s.kind === 'probe') need(s.step, oneOf(...PROBES), `${stepAt}.step`);
       if (m.status === 'complete' && !s.skipped) {
-        need(s.processedLongEdge, x => x > 0, `${stepAt}.processedLongEdge`);
+        need(s.processedLongEdge, x => exactCount ? x > 0 : x === 0, `${stepAt}.processedLongEdge`);
         need(s.signature, string, `${stepAt}.signature`);
-        for (const key of ['settle_ms', 'drained_ms']) need(s[key].samples.length, x => x === count, `${stepAt}.${key}.samples.length`);
+        for (const key of ['settle_ms', 'drained_ms']) need(s[key].samples.length, x => x === exactCount, `${stepAt}.${key}.samples.length`);
       }
     }
     for (const [j, entry] of m.impact.entries()) {
@@ -204,16 +222,18 @@ function impacts(m, run) {
   return PROBES.flatMap(probe => {
     const on = m.steps.find(s => s.step === probe && s.state === 'on');
     const off = m.steps.find(s => s.step === probe && s.state === 'off');
-    if (!on || !off || on.skipped || off.skipped || on.errors.length || off.errors.length) return [];
+    if (!on || !off || on.skipped || off.skipped || on.errors.length || off.errors.length
+      || !on.settle_ms.samples.length || !off.settle_ms.samples.length) return [];
     const f = med(off, 'first_feedback_ms');
     const s = med(off, 'settle_ms');
     const noOp = !m.pixelsChanged;
     const fd = noOp ? null : difference(med(on, 'first_feedback_ms'), f);
     const sd = noOp ? null : difference(med(on, 'settle_ms'), s);
     const md = noOp ? null : difference(on.memory_mb.footprint_peak, off.memory_mb.footprint_peak);
+    const noise = actualPhoto(m, run).sha256 === run.photo.sha256 ? run.noise : { spread_pct: 0 };
     const qualified = [[fd, f, 'first_feedback_ms', 30], [sd, s, 'settle_ms', 100]]
       .filter(([delta]) => delta !== null)
-      .map(([delta, before, clock, floor]) => ({ noise: Math.abs(delta) <= tolerance(before, run.noise, probe, clock),
+      .map(([delta, before, clock, floor]) => ({ noise: Math.abs(delta) <= tolerance(before, noise, probe, clock),
         impact: delta > floor && delta > before * .25 }));
     const flags = noOp ? ['no_op'] : [];
     if (!noOp && qualified.length && qualified.every(x => x.noise)) flags.push('noise');
@@ -288,6 +308,7 @@ function regressions(run, prior) {
   const results = [];
   for (const m of run.modules) {
     const before = prior.modules.find(x => x.module === m.module && x.lane === m.lane
+      && actualPhoto(x, prior).sha256 === actualPhoto(m, run).sha256
       && x.recipeHash === m.recipeHash && x.alternation === m.alternation && x.offMethod === m.offMethod
       && x.status === 'complete');
     if (!before || m.status !== 'complete' || (m.module !== 'baseline' && (!m.pixelsChanged || !before.pixelsChanged))) continue;
@@ -323,7 +344,8 @@ function markdown(runs, findings, comparison, result) {
       row('Module / lane', 'Probe', 'First feedback Δ ms (%)', 'Settle Δ ms (%)', 'Peak Δ MB', 'Flags'),
       row('---', '---', '---:', '---:', '---:', '---'));
     for (const m of run.modules) {
-      const label = `${m.module} / ${m.lane}`;
+      const photo = actualPhoto(m, run);
+      const label = `${m.module} / ${m.lane}${photo.sha256 === run.photo.sha256 ? '' : ' / ' + photo.file}`;
       if (m.status !== 'complete' || !m.impact.length) {
         lines.push(row(label, m.status === 'complete' ? 'No paired probes' : m.status, '—', '—', '—',
           m.status === 'complete' && m.module !== 'baseline' && !m.pixelsChanged ? 'no_op' : null));
@@ -334,7 +356,9 @@ function markdown(runs, findings, comparison, result) {
     lines.push('', '### Exceptions', '');
     const exceptions = run.modules.flatMap(m => [
       ...m.errors.map(e => `- ${m.module} — ${cell(e)}`),
-      ...m.steps.flatMap(s => [s.skipped, ...s.errors, ...(isSlow(s, run.zoom) ? [`slow (settle ${rounded(med(s, 'settle_ms'))} ms)`] : [])]
+      ...m.steps.flatMap(s => [s.skipped, ...s.errors,
+        ...(s.reducedSamples || []).map(sample => `CPU fallback at ${sample.actualLongEdge} px — ${sample.reason}`),
+        ...(isSlow(s, run.zoom) ? [`slow (settle ${rounded(med(s, 'settle_ms'))} ms)`] : [])]
         .filter(Boolean).map(e => `- ${m.module} / ${s.step} / ${s.state} — ${cell(e)}`)),
     ]);
     lines.push(...(exceptions.length ? exceptions : ['None.']), '');
