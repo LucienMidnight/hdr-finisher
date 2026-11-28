@@ -75,6 +75,10 @@ test('calculates paired deltas and applies strict thresholds without flagging dr
 test('validates audit recipes, timing statistics, actual photos and reduced CPU fallbacks', () => {
   const run = fixture(), [m] = run.modules;
   assert.equal(validateRun(run), run);
+  m.steps[0].first_frame_ms = { ...stats([52]), median: 0 };
+  assert.throws(() => validateRun(run), /first_frame_ms.median/);
+  m.steps[0].first_frame_ms = stats([52]);
+  assert.equal(validateRun(run), run);
   m.steps[0].settle_ms.median = 0;
   assert.throws(() => validateRun(run), /settle_ms.median/);
   m.steps[0].settle_ms = { ...stats([1010]), p95: 1010 };
@@ -137,11 +141,15 @@ test('reports only same-machine regressions above noise and refuses cross-machin
   const [run, prior, write] = dirs(t);
   const before = fixture();
   before.modules[0].steps[0] = step('on', 100, 950, 900);
-  writeJson(run, filename, fixture());
+  const after = fixture();
+  after.modules[0].steps[0].first_frame_ms = stats([52]);
+  writeJson(run, filename, after);
   writeJson(prior, filename, before);
   const result = cli('--run', run, '--compare', prior, '--write', write);
   assert.equal(result.status, 0, result.stderr);
   const summary = fs.readFileSync(path.join(write, 'summary.md'), 'utf8');
+  assert.ok(summary.includes(`| film / hdr | ${probe} | on | 52.0 | 141.0 |`));
+  assert.doesNotMatch(summary, /\| off \|/);
   assert.match(summary, /first_feedback_ms — 100.0 → 141.0/);
   assert.doesNotMatch(summary, /settle_ms —/);
   assert.ok(JSON.parse(fs.readFileSync(path.join(write, filename), 'utf8')).modules[0].impact[0].flags.includes('regression'));

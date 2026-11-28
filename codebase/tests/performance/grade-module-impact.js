@@ -210,8 +210,8 @@ function sampler() {
   };
 }
 
-// This runs in the disposable renderer. A queue fence is paired with both
-// the accepted frame and its generation, so a superseded frame cannot win.
+// This runs in the disposable renderer. Track fenced presentations separately
+// from feedback that is still current at the next animation frame.
 function installObserve() {
   const audit = window.__moduleAudit = { overlayNotBefore: 0, background: 0, rawPhases: [], denoiseEvents: [] };
   const openStage = gradeOpenStage;
@@ -284,7 +284,7 @@ function installObserve() {
     const now = audit.allocator();
     if (now !== null) record.allocator = Math.max(record.allocator ?? 0, now);
   };
-  function frame(accepted, fenced) {
+  function frame(accepted, fenced, presented) {
     const record = audit.step;
     if (!record || record.firstAt === null || !accepted) return;
     const row = { accepted, fenced, completedAt: null, currentAtCompletion: false };
@@ -294,13 +294,21 @@ function installObserve() {
       row.currentAtCompletion = state.acceptedPresentation === accepted && scopePresentationMatches(accepted, state.currentView);
       if (audit.step === record) audit.bump(record);
     });
-    if (fenced) void state.gpuPreview.device.queue.onSubmittedWorkDone().then(done, error => record.errors.push(String(error)));
+    if (fenced) void state.gpuPreview.device.queue.onSubmittedWorkDone().then(() => {
+      // The presentation event already ran at an animation frame. Do not
+      // require this edit to still be current once its GPU work finishes.
+      if (presented.submittedAt >= record.firstAt && (presented.sessionId !== record.inputSession
+        || presented.generation > record.inputGenerations[presented.lane])) {
+        record.firstFrameAt ??= performance.now();
+      }
+      done();
+    }, error => record.errors.push(String(error)));
     else done(); // CPU exact timing is still observable, but not GPU first feedback.
   }
   addEventListener('hdrfinisher:preview-presented', event => {
     const a = state.acceptedPresentation, e = event.detail;
     if (a?.transport === 'WebGPU' && a.sourceSerial === e.sourceSerial && a.generation === e.generation
-      && a.sessionId === e.sessionId && a.lane === e.lane) frame(a, true);
+      && a.sessionId === e.sessionId && a.lane === e.lane) frame(a, true, e);
   });
   const accept = acceptPresentation;
   acceptPresentation = function (...args) {
@@ -308,10 +316,15 @@ function installObserve() {
     if (state.acceptedPresentation?.transport !== 'WebGPU') frame(state.acceptedPresentation, false);
     return result;
   };
+  const firstInput = r => {
+    r.firstAt = performance.now();
+    r.inputSession = state.session?.session_id;
+    r.inputGenerations = { ...state.previewGeneration };
+  };
   const relevant = (event, record) => event.target instanceof Element && event.target.closest(record.selector);
   document.addEventListener('input', event => {
     const r = audit.step;
-    if (r && relevant(event, r) && r.firstAt === null) r.firstAt = performance.now();
+    if (r && relevant(event, r) && r.firstAt === null) firstInput(r);
   }, true);
   document.addEventListener('pointerup', event => {
     const r = audit.step;
@@ -323,14 +336,14 @@ function installObserve() {
   document.addEventListener('pointermove', event => {
     const r = audit.step;
     if (r?.type === 'canvas' && r.firstAt === null && event.isTrusted && event.buttons === 1 && relevant(event, r)) {
-      r.firstAt = performance.now();
+      firstInput(r);
     }
   }, true);
   document.addEventListener('click', event => {
     const r = audit.step;
     if (r?.type === 'click' && event.isTrusted && relevant(event, r) && r.firstAt === null) {
       // Buttons fire click rather than input. Their click is the edit ingress.
-      r.firstAt = performance.now();
+      firstInput(r);
       r.releaseAt ??= r.firstAt;
     }
   }, true);
@@ -490,6 +503,7 @@ function measureWith(page, memory) {
         const events = __moduleAudit.denoiseEvents.slice(r.denoiseEventIndex);
         const countEvent = event => events.filter(name => name === event).length;
         return {
+          first_frame_ms: r.firstFrameAt == null ? null : r.firstFrameAt - r.firstAt,
           first_feedback_ms: (first?.completedAt ?? r.retainedAt) != null
             ? (first?.completedAt ?? r.retainedAt) - r.firstAt : null,
           settle_ms: Math.max(0, completedAt - r.releaseAt),
@@ -888,7 +902,7 @@ async function canvasDrag(page, locator, gesture) {
   finally { await page.mouse.up(); }
 }
 
-const TIMINGS = [...CLOCKS, 'whole_wait_ms'];
+const TIMINGS = [...CLOCKS, 'first_frame_ms', 'whole_wait_ms'];
 const slider = selector => ({ selector, name: selector.replace(/^#/, ''), type: 'range' });
 const button = (selector, name) => ({ selector, name, type: 'click' });
 

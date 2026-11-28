@@ -103,6 +103,7 @@ One JSON object per line:
           "kind": "own",
           "state": "on",
           "processedLongEdge": 0,
+          "first_frame_ms": { "samples": [0], "min": 0, "median": 0, "max": 0, "iqr": 0 },
           "first_feedback_ms": { "samples": [0], "min": 0, "median": 0, "max": 0, "iqr": 0 },
           "settle_ms":         { "samples": [0], "min": 0, "median": 0, "max": 0, "iqr": 0 },
           "drained_ms":        { "samples": [0], "min": 0, "median": 0, "max": 0, "iqr": 0 },
@@ -146,10 +147,19 @@ One JSON object per line:
 - `reducedSamples` records accepted reduced CPU fallbacks with requested and
   actual long edges, reason, timing, signature and memory. Their timings do
   not count toward the regular step statistics.
-- Timing: `first_feedback_ms` runs from the control's first `input` event to
-  the first GPU-fenced frame current at completion; `settle_ms` from release to
-  the last current exact on-screen frame; `drained_ms` from release until
-  background catch-up is idle. No p95 below 10 samples.
+- Both first-frame clocks start at the control's first `input` event (or
+  equivalent pointer change or click).
+  - `first_frame_ms` ends when the GPU fence resolves for the first presented
+    frame from a new preview generation or source session after that input.
+    The edit doesn't have to still be current. If no new GPU frame is presented,
+    the step has no sample for that gesture. This optional field is a backward
+    compatible addition to v1 and doesn't affect paired impact flags.
+  - `first_feedback_ms` still ends at the first animation-frame check after a
+    GPU fence where the accepted frame matches the current edit. Verified
+    unchanged RAW Apply still uses its completion time with the retained picture.
+  - `settle_ms` runs from release to the last current exact on-screen frame.
+    `drained_ms` runs from release until background catch-up is idle.
+    No p95 below 10 samples.
 - `alternation`: `interleaved` (ON/OFF order alternates per sample) or
   `blocked` (RAW modules: a settled ON block, then an OFF block).
 - `skipped`: null, or the reason a step was not run (e.g. Micro Grain
