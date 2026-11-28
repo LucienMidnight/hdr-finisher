@@ -66,7 +66,7 @@ def grain_allocation(slots: int = 1):
     ask for ``slots`` concurrent chunks of its own; it waits while any
     foreground single-slot request is queued, so Grade still goes first.
     This bounds overlapping grain scratch, not the whole application's RAM.
-    No cache, memory setting, chunk geometry or sample arithmetic changes.
+    The field integrator checkpoints between bounded lattice blocks.
     """
     global _holders, _foreground_waiters, _narrow_waiters
     foreground = not _background.get()

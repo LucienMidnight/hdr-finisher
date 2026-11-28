@@ -3,11 +3,22 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 const { execFileSync } = require('node:child_process');
+// This diagnostic studies sample counts on the old physical renderer. F1
+// has one analytic field, so rebuild the original shader from its revision
+// while retaining the current app and device harness.
+const { runInNewContext } = require('node:vm');
+const preF1 = 'aee3d656';
+const legacyEnv = { window: {} };
+for (const name of ['gpu-param-layout', 'hsl-shader', 'lens-filters', 'webgpu-shaders']) {
+  const reference = execFileSync('git', ['show', `${preF1}:codebase/frontend/${name}.js`], { encoding: 'utf8' });
+  runInNewContext(reference, legacyEnv);
+}
+const physicalSource = legacyEnv.window.HDRWebGPUShaders.SHADER_SOURCE;
 const output = path.resolve('output/performance/grain-samples');
 const inputs = JSON.parse(fs.readFileSync(path.join(output, 'inputs.json')));
 const report = fs.existsSync(path.join(output, 'measurements.json')) ? JSON.parse(fs.readFileSync(path.join(output, 'measurements.json'))) :
   { date: new Date().toISOString(), commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
-    conditions: 'Isolated production grain field, real-photo tone-mapped base; 256px central texture metrics; whole Fit frame / 1024px zoom viewport timing; no other grade passes.', groups: [] };
+    grainShader: preF1, conditions: 'Isolated pre-F1 physical grain field, real-photo tone-mapped base; 256px central texture metrics; whole Fit frame / 1024px zoom viewport timing; no other grade passes.', groups: [] };
 const sampleFunction = `
 override benchmarkSamples: u32 = 16u;
 fn filmGrainStops(rgb: vec3f, coordinate: vec2i, master: f32) -> vec3f {
@@ -45,9 +56,8 @@ fn filmGrainStops(rgb: vec3f, coordinate: vec2i, master: f32) -> vec3f {
   try {
     await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: 'networkidle' });
     await page.waitForFunction(() => state.gpuPreview?.available);
-    await page.evaluate(async replacement => {
+    await page.evaluate(async ({ replacement, source }) => {
       const device = state.gpuPreview.device;
-      const source = HDRWebGPUShaders.SHADER_SOURCE;
       const start = source.indexOf('    fn filmGrainStops(');
       const end = source.indexOf('    // Integer texel', start);
       const entry = `@fragment fn grainBenchmark(input: VertexOut) -> @location(0) vec4f {
@@ -61,7 +71,7 @@ fn filmGrainStops(rgb: vec3f, coordinate: vec2i, master: f32) -> vec3f {
         vertex: { module: original, entryPoint: 'vertexMain' }, fragment: { module: original, entryPoint: 'grainBenchmark', targets: [{ format: 'rgba16float' }] } }) };
       for (const samples of [1, 2, 4, 6, 8, 12, 16]) __grainSweep.pipelines.set(samples, device.createRenderPipeline({ layout: 'auto',
         vertex: { module, entryPoint: 'vertexMain' }, fragment: { module, entryPoint: 'grainBenchmark', constants: { benchmarkSamples: samples }, targets: [{ format: 'rgba16float' }] } }));
-    }, sampleFunction);
+    }, { replacement: sampleFunction, source: physicalSource });
     for (const input of inputs) {
       if (report.groups.filter(group => group.file === input.file).length === 4) continue;
       await page.evaluate(input => {
@@ -136,7 +146,7 @@ fn filmGrainStops(rgb: vec3f, coordinate: vec2i, master: f32) -> vec3f {
           const file = `${path.parse(input.photo).name}-${input.label}-${input.lane}-${setting.name}-${samples}.rgba16`;
           fs.writeFileSync(path.join(output, file), Buffer.from(result.pixels, 'base64'));
           if (samples === -16) {
-            assert.deepEqual(fs.readFileSync(path.join(output, group.captures.at(-1).file)), Buffer.from(result.pixels, 'base64'), '16-sample benchmark differs from unmodified production grain');
+            assert.deepEqual(fs.readFileSync(path.join(output, group.captures.at(-1).file)), Buffer.from(result.pixels, 'base64'), '16-sample benchmark differs from the unmodified pre-F1 grain');
             fs.unlinkSync(path.join(output, file));
           } else group.captures.push({ samples, timesMs: result.times, clock: result.clock, file });
         }

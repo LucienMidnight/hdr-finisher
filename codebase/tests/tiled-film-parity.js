@@ -200,18 +200,18 @@ const MAX_CHANNEL_DELTA = 0;
       return { width: first.width, height: first.height, samples: first.width * first.height, differing, maxDelta };
     }, { left: a, right: b });
 
-    const renderDirect = async () => {
-      const staged = await page.evaluate(async () => {
-        const rendered = await window.HDRFinisherPerformance.renderGpuTier(requiredProcessingLongEdge());
+    const renderDirect = async (tier = "settled") => {
+      const staged = await page.evaluate(async (tier) => {
+        const rendered = await renderGpuDraft(state.currentView, { longEdge: requiredProcessingLongEdge(), tier });
         if (!rendered) return { error: "direct render failed", lastRefusal: state.lastGpuDraftRefusal || null };
         if (state.acceptedPresentation?.execution !== "direct") {
           return { error: `planner selected ${state.acceptedPresentation?.execution || "unknown"}, not direct` };
         }
         await state.gpuPreview.device.queue.onSubmittedWorkDone();
-        return { ok: true };
-      });
+        return { ok: true, exact: state.acceptedPresentation?.exact };
+      }, tier);
       if (staged.error) throw new Error(JSON.stringify(staged));
-      return capture();
+      return { ...await capture(), exact: staged.exact };
     };
 
     const renderTiled = async (tileSize) => {
@@ -313,6 +313,13 @@ const MAX_CHANNEL_DELTA = 0;
     // nothing else. Any tile-origin drift in the noise is the whole signal here.
     await configure({ grain_view_map: true });
     for (const tileSize of tileSizes) await parityPass("grain-view-map", tileSize);
+    const liveGrain = await renderDirect("interactive");
+    const settledGrain = await renderDirect();
+    const acrossTiers = await compare(liveGrain, settledGrain);
+    if (!liveGrain.exact || !settledGrain.exact || acrossTiers.maxDelta !== 0) {
+      throw new Error(`Film Grain changed at the same render scale on release: ${JSON.stringify(acrossTiers)}`);
+    }
+    console.log("same-scale interactive and settled Grain are exact and byte-identical  PASS");
     await configure({ grain_view_map: false });
 
     // Grain determinism across tiling: two tile sizes divide the frame along

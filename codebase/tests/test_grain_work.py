@@ -1,4 +1,4 @@
-"""Cancellation and exact grain output from baseline 88775059."""
+"""Film Grain cancellation, priority and deterministic output."""
 import asyncio
 import threading
 from pathlib import Path
@@ -23,37 +23,34 @@ def grain_cases(render=_apply_density_grain):
                     frame_window=FrameWindow(1500, 2500, 5320, 7968), preview_scale=scale)
 
 
-def test_uncancelled_pixels_equal_pre_change_output():
-    from helpers.grain_before_88775059 import _apply_density_grain as before
-    for (key, pixels), (old_key, reference) in zip(grain_cases(), grain_cases(before), strict=True):
-        assert key == old_key
-        np.testing.assert_array_equal(pixels, reference, err_msg=key)
+def test_uncancelled_pixels_equal_the_normal_output():
+    with render_work(lambda: True):
+        result = list(grain_cases())
+    for (key, pixels), (normal_key, normal) in zip(result, grain_cases(), strict=True):
+        assert key == normal_key
+        np.testing.assert_array_equal(pixels, normal, err_msg=key)
 
 
-def test_cancel_during_grain_band(monkeypatch):
+def test_cancel_inside_a_layer(monkeypatch):
     active = True
     calls = []
-    original = film_grain._splat_band
-    def splat(*args, **kwargs):
+    original = film_grain._axis
+    def axis(*args, **kwargs):
         nonlocal active
         calls.append(1)
         result = original(*args, **kwargs)
         active = False
         return result
-    monkeypatch.setattr(film_grain, "_splat_band", splat)
-    with render_work(lambda: active), pytest.raises(StaleRender): next(grain_cases())
+    monkeypatch.setattr(film_grain, "_axis", axis)
+    with render_work(lambda: active), pytest.raises(StaleRender):
+        next(grain_cases())
     assert len(calls) == 1
 
 
-def test_cancel_between_samples(monkeypatch):
-    calls = []
-    def noise(*args, **kwargs):
-        calls.append(kwargs["sample_offset"])
-        return np.ones((2, 2, 3), dtype=np.float32)
-    monkeypatch.setattr(film_grain, "grain_noise", noise)
-    with render_work(lambda: not calls), pytest.raises(StaleRender):
-        film_grain.preview_grain_noise(preview_scale=.2)
-    assert len(calls) == 1
+def test_unchanged_cancellation_does_not_leave_live_grain_work():
+    with pytest.raises(StaleRender), render_work(lambda: False):
+        next(grain_cases())
+    assert next(grain_cases())[1].dtype == np.float32
 
 
 def test_cpu_log_reason_photo_lane_size(monkeypatch):
@@ -78,12 +75,12 @@ def test_abandoned_scope_cancels_inside_grain(monkeypatch):
             disconnected = False
             async def is_disconnected(self): return self.disconnected
         request = Request()
-        original = film_grain._splat_band
-        def splat(*args, **kwargs):
+        original = film_grain._axis
+        def axis(*args, **kwargs):
             entered.set()
             assert released.wait(2)
             return original(*args, **kwargs)
-        monkeypatch.setattr(film_grain, "_splat_band", splat)
+        monkeypatch.setattr(film_grain, "_axis", axis)
         task = asyncio.create_task(queue.run(("old-session", "hdr", "scopes"), request, lambda current: next(grain_cases())))
         while not entered.is_set(): await asyncio.sleep(.001)
         request.disconnected = True

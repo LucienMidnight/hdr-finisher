@@ -13,16 +13,6 @@ vm.runInContext(frontendSource('webgpu-preview.js'), context);
 const Preview = context.window.HDRWebGPUPreview;
 const indices = HDRGpuParamLayout.indices;
 
-test('only interactive and coarse requests reduce grain, never delivery or measurement', () => {
-  for (const request of [{ tier: 'interactive' }, { tier: 'refinement', coarse: true }, { tier: 'settled', coarse: true }]) {
-    assert.equal(Preview.usesDraftGrain(request), true);
-    assert.equal(Preview.usesDraftGrain({ ...request, delivery: { texture: {} } }), false);
-    assert.equal(Preview.usesDraftGrain({ ...request, measureOnly: true }), false);
-  }
-  for (const request of [{}, { tier: 'settled' }, { tier: 'refinement' }, { tier: 'refinement', panPass: true },
-    { tier: 'refinement', roiCatchUp: true }]) assert.equal(Preview.usesDraftGrain(request), false);
-});
-
 test('scheduled coarse requests reach the renderer without downgrading settled requests', async () => {
   const requests = [];
   const state = { currentView: 'hdr', session: { session_id: 'grain-test', source: { width: 7968, height: 5320 } },
@@ -40,7 +30,6 @@ test('scheduled coarse requests reach the renderer without downgrading settled r
     const actual = requests.at(-1);
     assert.equal(actual.coarse, Boolean(request.coarse));
     assert.equal(actual.tier, request.tier);
-    assert.equal(Preview.usesDraftGrain(actual), request.tier !== 'settled');
   }
   assert.equal(requests.length, 3);
 });
@@ -186,7 +175,7 @@ test('tiled Mist waits for ready tiles, replaces changed masks and checks live G
   assert.equal(tile(firstRect), null);
 });
 
-test('lens cache skips only the summed glow and grain quality changes only the finish pass', () => {
+test('lens cache skips only the summed glow and keeps the same Film finish', () => {
   const preview = new Preview(null);
   const texture = name => ({ name, createView: () => name });
   const allocations = [];
@@ -206,33 +195,32 @@ test('lens cache skips only the summed glow and grain quality changes only the f
     setPipeline: pipeline => passes.push(pipeline), setBindGroup() {}, draw() {}, end() {} }),
     copyTextureToTexture: () => { copies++; } };
   const pipelines = Object.fromEntries(['response', 'lensWeights', 'lensExtract', 'lensHorizontal', 'lensVertical', 'lens',
-    'scatter', 'finish', 'finishInteractive', 'scan', 'structure', 'extract', 'blurHorizontal', 'blurVertical']
+    'scatter', 'finish', 'scan', 'structure', 'extract', 'blurHorizontal', 'blurVertical']
     .map(name => [name, name]));
   const params = new Float32Array(HDRGpuParamLayout.count);
   for (const field of ['FILM_RESPONSE_ENABLED', 'FILM_LOOK_STRENGTH', 'LENS_FILTER', 'LENS_SCATTER', 'FILM_RESOLUTION', 'HALATION_ENABLED']) params[indices[field]] = 1;
-  const render = interactive => preview.encodeFilmChain(encoder, pipelines, graph, 'original', () => ({}),
-    params, 1200, 800, { lensGlowKey: 'same', interactive });
-  assert.equal(render(true), true);
+  const render = () => preview.encodeFilmChain(encoder, pipelines, graph, 'original', () => ({}),
+    params, 1200, 800, { lensGlowKey: 'same' });
+  assert.equal(render(), true);
   assert.equal(allocations.length, 1);
   assert.equal(allocations[0].format, 'r32float');
   assert.deepEqual(passes.slice(0, 2), ['lensWeights', 'lensExtract']);
   assert.equal(passes.filter(pass => pass === 'lensVertical').length, 27);
-  assert.ok(passes.includes('finishInteractive'));
+  assert.ok(passes.includes('finish'));
   assert.equal(copies, 1);
   graph.lensGlowKey = 'same';
   passes.length = 0;
-  assert.equal(render(false), true);
+  assert.equal(render(), true);
   assert.ok(!passes.includes('lensWeights'));
   assert.ok(!passes.includes('lensVertical'));
   assert.ok(passes.includes('blurVertical'));
   assert.ok(passes.includes('finish'));
-  assert.ok(!passes.includes('finishInteractive'));
   assert.equal(copies, 1);
   preview.encodeFilmChain(encoder, pipelines, graph, 'original', () => ({}), params, 1200, 800);
   assert.equal(graph.lensGlowKey, 'same');
   assert.equal(copies, 1);
   params[indices.LENS_SCATTER] = 0;
-  assert.equal(render(false), false);
+  assert.equal(render(), false);
 });
 
 test('lens glow is charged to existing resident GPU admission', () => {
@@ -304,7 +292,7 @@ test('film detail dispatches over the whole partial tile without a frame scratch
   assert.deepEqual(encoded.map(({name}) => name), ['structure']);
 });
 
-test('presentation records processing resolution and never accepts drag grain as settled', () => {
+test('presentation records processing resolution and never accepts a draft as settled', () => {
   const state = { currentView: 'sdr', previewGeneration: { hdr: 1, sdr: 1 }, zoomMode: 'fit',
     adjustments: { shared: { geometry: {} } } };
   let requiredEdge = 1200;

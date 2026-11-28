@@ -1,3 +1,41 @@
+## November 28, 2026 — Fast Film Grain, isolated GPU work
+
+MacBook Neo, A18 Pro / 8 GB, 1408×794, shared GPU lock. The production Grain
+functions from `aee3d656` and `91a06728` ran as isolated HDR renders on the
+same tone-mapped RAW inputs (35 mm, Size 50, Amount 28, Chroma 40, Colour
+Negative). Five warmed, alternating GPU timestamp samples, with the
+corresponding no-Grain draw subtracted. Fit uses the full processing raster.
+100% uses the central 1024×1024 native-pixel tile, with each photo's full frame
+size and its real tile origin. This times Grain work, not the full action to
+visible picture. The later silver-shadow calibration does not change Colour
+Negative. Values are milliseconds, median (range).
+
+| Photo | Fit, old → new | 100% tile, old → new |
+| --- | --- | --- |
+| IMG_7723.CR3 (24 MP, Fit 1283×856) | 483.59 (481.49–494.86) → 6.68 (6.62–6.75) | 23.40 (23.33–23.40) → 2.10 (2.10–2.16) |
+| DSC00636.ARW (50 MP, Fit 1283×857) | 509.15 (489.23–514.52) → 6.68 (6.62–6.95) | 21.95 (21.89–22.02) → 2.10 (2.10–2.16) |
+
+Both Fit measurements are below the 25 ms Grain budget. Raw timestamps:
+`codebase/output/f1-grain/gpu.json`.
+
+## November 28, 2026 — Fast Film Grain, native CPU export
+
+MacBook Neo, A18 Pro / 8 GB, shared run lock. Native SDR PNG from already
+developed Canon and Sony RAWs with Portra 400 and Grain Amount 28, Size 50,
+Chroma 40, 35 mm, and no Mist. Two matched runs per field, alternating
+order. The candidate differs from base `aee3d656` only in Film Grain field
+(`d0f1e21c`). Decode is outside the export wait. The Grain stage includes
+the stock work that consumes its density. Values are seconds, median
+(range). The larger Canon candidate spread makes the precise gain there
+less certain, but the ranges do not overlap.
+
+| Photo | Entire export, old → new | Grain and stock stage, old → new |
+| --- | --- | --- |
+| IMG_7723.CR3, 24 MP | 45.97 (45.47–46.48) → 29.54 (25.77–33.31) | 42.59 (42.06–43.12) → 25.21 (22.48–27.94) |
+| DSC00636.ARW, 50 MP | 86.84 (86.52–87.16) → 53.51 (53.38–53.64) | 77.14 (76.71–77.56) → 43.76 (43.66–43.87) |
+
+Raw timings: `codebase/output/f1-grain/cpu-export.json`.
+
 ## November 28, 2026 — Grade audit first presented GPU frame
 
 MacBook Neo, A18 Pro, 8 GB, 1408×794 at 2×, mains power, shared GPU lock.

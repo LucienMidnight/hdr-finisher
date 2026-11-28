@@ -4871,47 +4871,11 @@
         "export-proof"
       ],
       "tier": "area",
-      "protects": "Default grain and one-sample draft remain byte-identical to their frozen numerical references across scale, size, film type and lane.",
+      "protects": "A GPU grain pixel matches the mean of the same field sampled with sixteen aligned finer pixel footprints.",
       "launch": {
         "method": "electron"
       },
-      "brief": "Default grain and one-sample draft remain byte-identical to their frozen numerical references across scale, size, film type and lane. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
-      "expectedMinutes": {
-        "win": null,
-        "mac": null
-      },
-      "deadlineMinutes": 15,
-      "deadlinePolicy": "Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.",
-      "requirements": [
-        "Repository setup completed; Node/npm dependencies installed.",
-        "Electron/Playwright and backend virtual environment with native tools from setup.",
-        "Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile.",
-        "Shared GPU-run lock; real-app checks must not overlap.",
-        "WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal."
-      ],
-      "platforms": {
-        "os": [
-          "win",
-          "mac",
-          "linux"
-        ],
-        "notes": [
-          "Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.",
-          "MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock."
-        ]
-      }
-    },
-    {
-      "path": "tests/grade-grain-pruning.js",
-      "areas": [
-        "film"
-      ],
-      "tier": "area",
-      "protects": "Grade tile grain pruning preserves the original WebGPU grain samples bit for bit.",
-      "launch": {
-        "method": "electron"
-      },
-      "brief": "Grade tile grain pruning preserves the original WebGPU grain samples bit for bit. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
+      "brief": "A GPU grain pixel matches the mean of the same field sampled with sixteen aligned finer pixel footprints. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
       "expectedMinutes": {
         "win": null,
         "mac": null
