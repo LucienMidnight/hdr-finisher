@@ -386,6 +386,31 @@ for (const liveScene of [false,true]) test(`native requests develop and hand off
   assert.deepEqual(streamed,[100000],'Only full-size detail is streamed in bands');
 });
 
+test('disposing native detail removes a reservation even if its pending heartbeat arrives late',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm');
+ const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+ const native=source.slice(source.indexOf('    if(nativeDirect){'),source.indexOf('    // Masks, warps and denoise need'));
+ const url='/api/delivery/gpu/raw-budget/test', directScenes=new Map();
+ let beat,allowPost,destroyed=0,reserved=true,posts=0,deletes=0;
+ const late=new Promise(resolve=>allowPost=resolve);
+ const picture={planes:[{byteLength:16,gpuBuffer:{destroy:()=>destroyed++}}]}, value={direct_supported:true,render_identity:'grade'};
+ const context={nativeDirect:true,entries:[{picture}],meta:{rgb:true},sceneIdentity:'grade',path:'photo',sourceJob:'source',sourceRenewal:0,
+  retainedSource:false,sharedJob:null,selectedResult:null,grant:null,READBACK_BAND:64,root:{},directScenes,AbortController,
+  send:async()=>value,releaseNative(){},developed:{retain:async()=>({url})},gpuDone(){},
+  setInterval:callback=>(beat=callback,1),clearInterval(){},
+  async fetch(route,{method}){
+   if(route!==url)return {ok:true};
+   if(method==='DELETE'){deletes++;reserved=false;return {ok:true};}
+   posts++;await late;reserved=true;return {ok:true,json:async()=>({granted:true})};
+  }};
+ await vm.runInNewContext('(async()=>{'+native+'})()',context);
+ const pending=beat();await beat();assert.equal(posts,1);
+ directScenes.get('photo|grade').dispose();
+ assert.equal(destroyed,1);assert.equal(value.directScene.usable(),false);assert.equal(reserved,false);
+ allowPost();await pending;
+ assert.equal(reserved,false);assert.equal(deletes,2);
+});
+
 for(const cancelAll of [false,true])test(`shared samples release after ${cancelAll?'last requester cancels':'handoff fails'}`,async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
  let enter,release,releases=0;

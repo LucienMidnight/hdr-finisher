@@ -1428,8 +1428,9 @@
         // Keep the existing bounded readback band inside the transferred grant.
         const reservedBytes=bytes+Math.min(READBACK_BAND,picture.planes[0].byteLength);
         const reservation=await developed.retain(reservedBytes);
-        let disposed=false, storing, stored=false, polling=false;
+        let disposed=false, storing, stored=false, polling=false, renewing;
         const upload=new AbortController();
+        const releaseReservation=()=>fetch(reservation.url,{method:'DELETE'}).catch(()=>{});
         // No decoded source body is retained by this owner. Only GPU planes,
         // the small description and the existing source publication token.
         const dispose=()=>{
@@ -1437,7 +1438,9 @@
           upload.abort();
           for(const plane of picture.planes)plane.gpuBuffer.destroy();
           picture.planes=[];
-          void fetch(reservation.url,{method:'DELETE'}).catch(()=>{});
+          void releaseReservation();
+          // A renewal still on its way to the broker can recreate the lease.
+          if(renewing)void renewing.then(releaseReservation,releaseReservation);
           void fetch('/api/library/live-source/'+sourceJob,{method:'DELETE'}).catch(()=>{});
           root.HDRLibraryStopwatch?.('picture_native_released',{path,bytes});
         };
@@ -1454,11 +1457,12 @@
         const heartbeat=setInterval(async()=>{
           if(polling||disposed)return;polling=true;
           try{
-            const response=await fetch(reservation.url,{method:'POST',headers:{'Content-Type':'application/json'},
-              body:JSON.stringify({bytes:reservedBytes,background:true,concurrent:true,draw:true,priority:0})});
+            const response=await (renewing=fetch(reservation.url,{method:'POST',headers:{'Content-Type':'application/json'},
+              body:JSON.stringify({bytes:reservedBytes,background:true,concurrent:true,draw:true,priority:0})}));
+            renewing=null;
             const status=await response.json();
             if(!response.ok || !status.granted || status.preempt){dispose();if(directScenes.get(poolKey)?.variants[100000]===value)directScenes.delete(poolKey);}
-          }catch{dispose();if(directScenes.get(poolKey)?.variants[100000]===value)directScenes.delete(poolKey);}finally{polling=false;}
+          }catch{renewing=null;dispose();if(directScenes.get(poolKey)?.variants[100000]===value)directScenes.delete(poolKey);}finally{polling=false;}
         },100);
         picture.retained=true;
         value.directScene={native:true,usable:()=>!disposed,planes:()=>!disposed && picture.planes,rawWidth:picture.width,rawHeight:picture.height,
