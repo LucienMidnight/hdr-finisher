@@ -306,3 +306,13 @@ PC follow-ups to AGENTS.md "Waiting on the other machine".
   R5 owns shared preview infrastructure; Photo Framing out of scope; T0
   "well organised" summary; 200 ms memory sampling; min/median/max/IQR
   instead of p95 at 5 samples; mid-batch baseline for thermal drift.
+- 2026-11-28 (Steve, evening): Film Look speed. Target: slider movement to
+  preview update of 100–200 ms in total, with modules stacked, so Film should add
+  ≤100 ms. No visible draft-then-swap while dragging. Prefer a Film built to be fast
+  with preview = settled = export; artistic accuracy is enough. Leaving a heavy
+  effect out of presets, with a warning, is an acceptable cheaper route. Approved:
+  (1) the Print Contrast data path with identical output, now;
+  (3) a consistent faster Grain plus multi-scale Mist after the sprint's tests,
+  on its own branch and commits, with before/after crops in the report for Steve
+  to review, then tested by Steve on the PC's large screen. Research reports:
+  Sol and Neon Film exploration (to be filed under `docs/technical/research/`).
