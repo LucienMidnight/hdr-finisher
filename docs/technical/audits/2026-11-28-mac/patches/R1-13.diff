@@ -35,7 +35,7 @@ diff --git a/codebase/desktop/main.js b/codebase/desktop/main.js
      desktopEvent("app", "renderer_exited", { level: "warn", role, exit_reason: details.reason, exit_code: details.exitCode });
    });
 @@ -1222,6 +1232,7 @@
-     }).catch(() => {});
+     }).catch((error) => console.warn("Could not show the Windows session-end dialog:", error));
    });
    window.on("closed", () => {
 +    cancelLibraryPastesFor(window);

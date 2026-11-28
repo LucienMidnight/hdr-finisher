@@ -477,7 +477,7 @@ async function startBackend() {
           return;
         }
         if ((dirty && response === 2) || (!dirty && response === 1)) await beginShutdown();
-      }).catch(() => {});
+      }).catch((error) => console.warn("Could not handle the backend-exit dialog:", error));
     }
   });
 }
@@ -1244,7 +1244,7 @@ async function createWindow(role = "main") {
       detail: "Save or discard the document, then retry shutdown, restart, or sign out.",
       buttons: ["OK"],
       noLink: true,
-    }).catch(() => {});
+    }).catch((error) => console.warn("Could not show the Windows session-end dialog:", error));
   });
   window.on("closed", () => {
     clearTimeout(record.displayTimer);
