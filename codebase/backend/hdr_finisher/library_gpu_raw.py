@@ -81,6 +81,102 @@ async def receive_frame(request, *, max_bytes=None):
     return unframe(body)
 
 
+async def receive_developed_frame(request, payload_limit):
+    """Read only metadata until the backend has verified the source envelope."""
+    from starlette.concurrency import run_in_threadpool
+
+    declared = request.headers.get("content-length")
+    length = None if declared is None else int(declared)
+    # This bounds unverified wire metadata, not the developed pixels. The
+    # negotiated payload size below is set by the source, not by this allowance.
+    max_header_bytes = 256 * 1024
+    invalid_size = "The developed picture exceeds its bounded upload size."
+    incomplete = "The developed picture was incomplete."
+    if length is not None and length < 4:
+        raise ValueError(incomplete)
+    prefix = bytearray()
+    prefix_size = 4
+    header = None
+    offset = 0
+    async for data in request.stream():
+        chunk = memoryview(data)
+        while header is None:
+            count = min(prefix_size - len(prefix), len(chunk))
+            prefix.extend(chunk[:count])
+            chunk = chunk[count:]
+            if len(prefix) < prefix_size:
+                break
+            if prefix_size == 4:
+                metadata_size = struct.unpack_from("<I", prefix)[0]
+                if not 0 < metadata_size <= max_header_bytes:
+                    raise ValueError(invalid_size)
+                prefix_size = 4 + metadata_size
+                if length is not None and prefix_size > length:
+                    raise ValueError(incomplete)
+                continue
+            header = json.loads(prefix[4:].decode("utf-8"))
+            if not isinstance(header, dict):
+                raise ValueError(incomplete)
+            limit = await run_in_threadpool(payload_limit, header)
+            remaining = None if length is None else length - prefix_size
+            if (remaining is not None and remaining > limit) or len(chunk) > limit:
+                raise ValueError(invalid_size)
+            body = bytearray() if remaining is None else await run_in_threadpool(bytearray, remaining)
+        if header is None or not chunk:
+            continue
+        end = offset + len(chunk)
+        if end > limit:
+            raise ValueError(invalid_size)
+        if remaining is None:
+            await run_in_threadpool(body.extend, chunk)
+        else:
+            if end > remaining:
+                raise ValueError(incomplete)
+            await run_in_threadpool(body.__setitem__, slice(offset, end), chunk)
+        offset = end
+    if header is None or (remaining is not None and offset != remaining):
+        raise ValueError(incomplete)
+    return header, memoryview(body)
+
+
+def developed_payload_limit(header, source_size, *, rgb):
+    """Use the existing tier, source shape and plane format as the byte cap."""
+    width, height, edge = header["width"], header["height"], header["edge"]
+    if any(type(value) is not int for value in (width, height, edge)):
+        raise ValueError("Invalid developed picture dimensions.")
+    short, long = sorted((width, height))
+    source_short, source_long = sorted(source_size)
+    if not 0 < short <= source_short or not 0 < long <= min(source_long, edge):
+        raise ValueError("The developed picture exceeds its source dimensions.")
+    if header.get("describe_only"):
+        return 0
+    if rgb:
+        planes = 6 if header["colour"].get("authored_sdr", True) or header.get("has_sdr_reference") else 3
+        sample_bytes = header.get("sample_bytes", 4)
+    else:
+        planes = 3
+        half = header.get("sample_bytes", 4) == 2 and edge != 100000 and not header.get("native_mode")
+        sample_bytes = 2 if half else 4
+    if sample_bytes not in (2, 4):
+        raise ValueError("Unsupported preview precision.")
+    return width * height * planes * sample_bytes
+
+
+def sensor_upload_shape(path, identity):
+    """Verify the original and read only the RAW header for thumbnail bounds."""
+    import rawpy
+
+    path = Path(path).resolve(strict=True)
+    if _identity(path) != identity:
+        raise ValueError("Photo changed while its Library picture was being developed.")
+    try:
+        with rawpy.RawPy() as raw:
+            raw.open_file(str(path))
+            return raw.sizes.raw_width, raw.sizes.raw_height
+    except rawpy.LibRawError as error:
+        raise ValueError("Could not read the Library RAW source dimensions.") from error
+
+
 def unframe(body: bytes) -> tuple[dict, memoryview]:
     if len(body) < 4:
         raise ValueError("The developed picture was incomplete.")

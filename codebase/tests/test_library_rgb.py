@@ -594,6 +594,8 @@ def test_rgb_description_precedes_pixels_and_keeps_publication_guards(tmp_path, 
         described = response.json()
         assert described["direct_supported"] and described["scene_width"] == 8
         pixels = np.full((6,4,8), .125, dtype="<f4").tobytes()
+        outside_source = client.post("/api/library/live-developed", content=frame({**header, "width": 9}, pixels))
+        assert outside_source.status_code == 409 and "source dimensions" in outside_source.json()["detail"]
         accepted = client.post("/api/library/live-developed", content=frame(header,pixels))
         assert accepted.status_code == 200
         assert accepted.json()["key"] == described["key"]

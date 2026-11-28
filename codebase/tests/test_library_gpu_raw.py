@@ -473,3 +473,95 @@ def test_lens_grid_rows_match_grades_whole_picture_lensfun_call():
                         flags=flags.SCALE | flags.DISTORTION | flags.TCA | flags.VIGNETTING)
     whole = np.asarray(modifier.apply_subpixel_geometry_distortion())[::16, ::16]
     assert np.abs(grid - whole).max() < 0.005
+
+
+def test_developed_frame_checks_ownership_and_stops_at_pixel_envelope(monkeypatch):
+    import asyncio
+
+    header = {"width": 2, "height": 1, "edge": 640}
+    payload = b"p" * 24
+    prefix = gpu_raw.frame(header)
+    sized_allocations = []
+    reads = []
+    ownership = []
+
+    def allocate(*args):
+        if args:
+            sized_allocations.append(args[0])
+        return bytearray(*args)
+
+    monkeypatch.setattr(gpu_raw, "bytearray", allocate, raising=False)
+
+    class Stream:
+        def __init__(self, length, *chunks):
+            self.headers = {} if length is None else {"content-length": str(length)}
+            self.chunks = chunks
+
+        async def stream(self):
+            for i, chunk in enumerate(self.chunks):
+                reads.append(i)
+                yield chunk
+
+    def owned(received):
+        ownership.append(received)
+        return gpu_raw.developed_payload_limit(received, (2, 1), rgb=False)
+
+    def not_owned(received):
+        raise ValueError("source not owned")
+
+    with pytest.raises(ValueError, match="source not owned"):
+        asyncio.run(gpu_raw.receive_developed_frame(Stream(len(prefix) + len(payload), prefix, payload), not_owned))
+    assert not sized_allocations
+    assert reads == [0]
+
+    reads.clear()
+    with pytest.raises(ValueError, match="bounded"):
+        asyncio.run(gpu_raw.receive_developed_frame(Stream(len(prefix) + len(payload) + 1, prefix, payload), owned))
+    assert ownership == [header]
+    assert not sized_allocations
+    assert reads == [0]
+
+    reads.clear()
+    with pytest.raises(ValueError, match="bounded"):
+        asyncio.run(gpu_raw.receive_developed_frame(Stream(None, prefix, payload, b"x", b"unread"), owned))
+    assert reads == [0, 1, 2]
+    assert not sized_allocations
+
+    for length in (None, len(prefix) + len(payload)):
+        actual_header, actual_pixels = asyncio.run(gpu_raw.receive_developed_frame(
+            Stream(length, prefix[:2], prefix[2:7], prefix[7:] + payload[:3], payload[3:]), owned))
+        assert actual_header == header
+        assert bytes(actual_pixels) == payload
+    assert sized_allocations == [24]
+
+
+def test_raw_developed_uses_validated_source_shape(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.media_browser import MediaBrowserStore
+
+    photo = tmp_path / "small.ARW"
+    photo.write_bytes(b"fake RAW")
+    identity = gpu_raw._identity(photo)
+    seen = []
+
+    def source_shape(path, supplied_identity):
+        assert path == photo and supplied_identity == identity
+        return 2, 1
+
+    def developed(_cache, path, _header, payload):
+        seen.append((path, bytes(payload)))
+        return {}
+
+    monkeypatch.setattr(gpu_raw, "sensor_upload_shape", source_shape)
+    monkeypatch.setattr(gpu_raw, "developed", developed)
+    app = FastAPI()
+    app.include_router(create_library_router(object(), MediaBrowserStore(tmp_path / "profile")))
+    header = {"path": str(photo), "identity": identity, "width": 2, "height": 1, "edge": 640}
+    pixels = bytes(24)
+    with TestClient(app) as client:
+        denied = client.post("/api/library/raw-developed", content=gpu_raw.frame({**header, "width": 3}, pixels))
+        assert denied.status_code == 409 and seen == []
+        accepted = client.post("/api/library/raw-developed", content=gpu_raw.frame(header, pixels))
+        assert accepted.status_code == 200 and seen == [(str(photo), pixels)]

@@ -795,7 +795,8 @@ def create_library_router(worker, browser, store=None):
                                 for r, rectangles in batch] for batch in batches]
                             header.setdefault("source_timings_ms", {})["retouch_recipe_ms"] = (
                                 recipe_ms + (time.perf_counter()-plan_at)*1000)
-                        source_jobs.check(token, file_commands.epoch)
+                        source_jobs.set_developed_source(token, file_commands.epoch,
+                            header["width"], header["height"], header.get("rgb"))
                         if await request.is_disconnected():
                             raise HTTPException(499, "Library request cancelled.")
                         header.setdefault("source_timings_ms", {}).update(checks_claim=(claimed_at-requested_at)*1000, decode_prepare=(time.perf_counter()-claimed_at)*1000)
@@ -878,12 +879,42 @@ def create_library_router(worker, browser, store=None):
         metadata, parts = result
         return StreamingResponse(library_gpu_raw.frame_chunks(metadata, *parts), media_type="application/octet-stream")
 
+    def live_developed_owner(header, path, *, include_developed_source=False):
+        owner = source_jobs.check(header["source_job"], file_commands.epoch,
+                                  include_developed_source=include_developed_source)
+        if (owner["path"] != path or owner["quality"] != header["source_quality"]
+                or (owner["edge"] == 100000) != (header["edge"] == 100000)):
+            raise ValueError("Developed source does not match its preparation owner.")
+        return owner
+
+    async def receive_developed(request, *, live_scene):
+        from . import library_gpu_raw
+        token = request.headers.get("x-library-native-upload")
+        if token is not None:
+            return await run_in_threadpool(lambda: library_gpu_raw.unframe(cache.native_upload(token)))
+
+        def payload_limit(header):
+            if live_scene:
+                path = str(marks.source_path(header["item_path"]))
+                owner = live_developed_owner(header, path, include_developed_source=True)
+                size, rgb = owner["developed_source"]
+                if bool(header.get("rgb")) != rgb:
+                    raise ValueError("Developed source does not match its preparation owner.")
+            else:
+                edge = header["edge"]
+                if type(edge) is not int or not (64 <= edge <= 2560 or (edge == 100000 and header.get("native_mode"))):
+                    raise ValueError("Developed source does not match its requested tier.")
+                size = library_gpu_raw.sensor_upload_shape(marks.source_path(header["path"]), header["identity"])
+                rgb = False
+            return library_gpu_raw.developed_payload_limit(header, size, rgb=rgb)
+        return await library_gpu_raw.receive_developed_frame(request, payload_limit)
+
     @router.post("/live-developed")
     async def live_developed(request: Request):
         accepted_at = time.perf_counter()
         from . import library_gpu_raw
         try:
-            header, body = await run_in_threadpool(lambda: library_gpu_raw.unframe(cache.native_upload(request.headers["x-library-native-upload"]))) if "x-library-native-upload" in request.headers else await library_gpu_raw.receive_frame(request)
+            header, body = await receive_developed(request, live_scene=True)
             if header.get("source_job"):
                 source_jobs.check(header["source_job"], file_commands.epoch)
             item = header["item_path"]
@@ -892,9 +923,7 @@ def create_library_router(worker, browser, store=None):
                 raise ValueError("Source settings changed during development.")
             path = str(marks.source_path(item))
             if header.get("source_job"):
-                owner = source_jobs.check(header["source_job"], file_commands.epoch)
-                if owner["path"] != path or owner["quality"] != header["source_quality"] or (owner["edge"] == 100000) != (header["edge"] == 100000):
-                    raise ValueError("Developed source does not match its preparation owner.")
+                live_developed_owner(header, path)
             publication_epoch = file_commands.epoch
             class SceneCache:
                 def build(self, source, edge, _quality, decoded):
@@ -965,7 +994,7 @@ def create_library_router(worker, browser, store=None):
                 # (including GPU-loss fallback) until the scene is saved.
                 source_foreground(header["source_job"], False)
             return described
-        except (ValueError, OSError, KeyError) as error:
+        except (ValueError, OSError, KeyError, TypeError) as error:
             raise HTTPException(409, str(error)) from error
 
     @router.post("/live-store/{key}")
@@ -1693,12 +1722,12 @@ def create_library_router(worker, browser, store=None):
     @router.post("/raw-developed")
     async def raw_developed(request: Request):
         try:
-            header, payload = await run_in_threadpool(lambda: library_gpu_raw.unframe(cache.native_upload(request.headers["x-library-native-upload"]))) if "x-library-native-upload" in request.headers else await library_gpu_raw.receive_frame(request)
+            header, payload = await receive_developed(request, live_scene=False)
             path = str(marks.source_path(header["path"]))
             started = time.perf_counter()
             result = await run_in_threadpool(library_gpu_raw.developed, cache, path, header, payload)
             store_ms = (time.perf_counter() - started) * 1000
-        except (ValueError, OSError, KeyError) as error:
+        except (ValueError, OSError, KeyError, TypeError) as error:
             raise HTTPException(status_code=409, detail=user_error(error)) from error
         log("picture_raw_developed", path=path, key=result.get("key"), store_ms=store_ms, **(header.get("timing_ms") or {}))
         return result

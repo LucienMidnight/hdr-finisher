@@ -102,13 +102,21 @@ class SourceJobs:
                                   priority=priority, epoch=epoch, touched=now, edges=[edge])
             return token
 
-    def check(self, token, epoch):
+    def check(self, token, epoch, *, include_developed_source=False):
         with self.lock:
             job = next((v for v in self.jobs.values() if v['token'] == token), None)
             if not job or (not job.get('active') and monotonic() - job['touched'] >= 60) or job['epoch'] != epoch or picture_key(job['path'], 100000 if job['edge'] == 100000 else 0, job['quality']) != job['key']:
                 raise ValueError('Source preparation expired or was invalidated; request it again.')
             job['touched'] = monotonic()
-            return {k:v for k,v in job.items() if k not in {'cancel','promote','retouch'}}
+            private = {'cancel', 'promote', 'retouch'}
+            if not include_developed_source:
+                private.add('developed_source')
+            return {k: v for k, v in job.items() if k not in private}
+
+    def set_developed_source(self, token, epoch, width, height, rgb):
+        with self.lock:
+            owner = self.check(token, epoch)
+            self.jobs[owner["key"]]["developed_source"] = ((width, height), bool(rgb))
 
     def set_retouch(self, token, epoch, plan):
         with self.lock:
