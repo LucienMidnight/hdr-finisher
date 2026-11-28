@@ -147,14 +147,18 @@ test('Library compiles only demanded passes and uses the unchanged Grade descrip
  const library=fs.readFileSync(require.resolve('../frontend/library-gpu'),'utf8');
  const base=grade.slice(grade.indexOf('    pipelineFor(format, factory = null)'),grade.indexOf('    async warmPipelines'));
  const methods=library.slice(library.indexOf('  pipelineFor(format, factory = null)'),library.indexOf('  async loadProxy'));
- const context={HDRLibraryStopwatch(){},window:{HDRWebGPUShaders:require('../frontend/webgpu-shaders.js').HDRWebGPUShaders},performance,CLARITY_MAP_FORMAT:'rgba16float'};
+ const context={HDRLibraryStopwatch(){},window:{HDRWebGPUShaders:require('../frontend/webgpu-shaders.js').HDRWebGPUShaders},
+  performance,GPUShaderStage:{FRAGMENT:2},CLARITY_MAP_FORMAT:'rgba16float'};
  vm.runInNewContext('class Grade {'+base+'};class Library extends Grade {'+methods+'};this.Grade=Grade;this.Library=Library;',context);
- const created=[],gpu=new context.Library();gpu.pipelines=new Map();gpu.module={shader:'unchanged'};gpu.pipelineLayout={layout:'unchanged'};
+ const created=[],gpu=new context.Library();gpu.pipelines=new Map();gpu.module={shader:'unchanged'};
+ gpu.bindGroupLayout={group:0};gpu.pipelineLayout={layout:'unchanged'};
  const compile=kind=>descriptor=>{assert.ok(descriptor[kind]);created.push(descriptor);return {descriptor};};
- gpu.device={createRenderPipeline:compile('fragment'),createRenderPipelineAsync:async descriptor=>compile('fragment')(descriptor),
+ gpu.device={createBindGroupLayout:descriptor=>descriptor,createPipelineLayout:descriptor=>descriptor,
+  createRenderPipeline:compile('fragment'),createRenderPipelineAsync:async descriptor=>compile('fragment')(descriptor),
   createComputePipeline:compile('compute')};
  const staged=gpu.pipelineFor('bgra8unorm');assert.equal(created.length,0,'Unused passes never compile');
- const gradeGpu=new context.Grade();gradeGpu.pipelines=new Map();gradeGpu.module=gpu.module;gradeGpu.pipelineLayout=gpu.pipelineLayout;
+ const gradeGpu=new context.Grade();gradeGpu.pipelines=new Map();gradeGpu.module=gpu.module;
+ gradeGpu.device=gpu.device;gradeGpu.bindGroupLayout=gpu.bindGroupLayout;gradeGpu.pipelineLayout=gpu.pipelineLayout;
  const expected=gradeGpu.pipelineFor('bgra8unorm',d=>d);
  const first=staged.finish;assert.deepEqual(first.descriptor,expected.finish);assert.equal(created.length,1);assert.equal(staged.finish,first);
  await gpu.prepareLibraryPipelines('bgra8unorm',['base','finish']);assert.equal(created.length,2);assert.deepEqual(staged.base.descriptor,expected.base);
