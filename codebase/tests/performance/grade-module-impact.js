@@ -773,7 +773,18 @@ async function setModuleEye(page, id, rendition, on) {
   await selectTab(page, id === 'local' ? 'local' : 'global');
   const key = renameLane(EYES[id], rendition);
   const enabled = () => page.evaluate(path => getValueByPath(state.adjustments, resolveAdjustmentPath(path)) !== false, key);
-  if (await enabled() !== on) await (await reveal(page, eye(key))).click();
+  if (await enabled() !== on) {
+    await (await reveal(page, eye(key))).click();
+    if (id === 'local') {
+      // The shared eye invalidates the picture without saving the document.
+      // Persist its state before Denoise priming reloads the saved settings.
+      await bounded(page.evaluate(async () => {
+        const adjustments = structuredClone(state.adjustments);
+        if (!await queueEditCommand('set_global_adjustments', { adjustments }))
+          throw Error('Could not persist the Local Adjustments eye for the audit probes');
+      }), 'Persist Local Adjustments eye');
+    }
+  }
   if (await enabled() !== on) throw Error(`Module eye did not reach the requested state: ${id}`);
 }
 
@@ -1049,6 +1060,8 @@ async function auditModule(page, measure, row, cfg, defaults) {
       await prime(page);
       await setDenoise(page, on, 'clean_grain');
     }
+    if (id === 'local' && await page.evaluate(() => !localsBypassed()) !== on)
+      throw Error(`Local Adjustments eye did not stay ${on ? 'on' : 'off'} after Denoise priming`);
   };
   await selectTab(page);
   await restoreGrade(page, defaults, rendition, zoom);
