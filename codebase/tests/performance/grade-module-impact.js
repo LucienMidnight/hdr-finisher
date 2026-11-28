@@ -678,6 +678,59 @@ async function openMatch(page) {
   await page.waitForFunction(() => !els.sdrMatchEntire.disabled, null, { timeout: LIMIT });
 }
 
+async function seedHeals(page, recipe) {
+  await selectTab(page, 'retouch');
+  const heal = page.locator('#retouch-mode-heal');
+  const message = () => page.locator('#retouch-status').textContent({ timeout: 3000 });
+  for (const [i, spot] of recipe.repairs.entries()) {
+    const step = `retouch.seed.heal.${i + 1}`;
+    // Explicitly start a new Heal and clear the donor. A selected repair or
+    // reused donor is a different editing state from a two-click Heal.
+    if (await heal.getAttribute('aria-pressed') === 'true') await heal.click();
+    await heal.click();
+    await page.locator('#retouch-source-pick').click();
+    await page.evaluate(async ({ size, feather, texture, opacity }) => {
+      await ensureGeometryCoordinateMap();
+      for (const [key, value] of Object.entries({ size, feather, texture, opacity })) {
+        const control = retouchInput(key);
+        control.value = String(value);
+        control.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }, recipe);
+    const target = await page.waitForFunction(({ source, destination }) => {
+      if (!retouchOwns() || retouchUI.mode !== 'heal' || retouchUI.busy || retouchUI.source) return null;
+      const box = activePreviewElement().getBoundingClientRect();
+      const points = [source, destination].map(([x, y]) => {
+        const p = sourcePointToDisplay({ x, y });
+        return p && [box.left + p.x * box.width, box.top + p.y * box.height];
+      });
+      return points.every(p => p && document.elementFromPoint(...p) === els.localMaskOverlay) ? points : null;
+    }, spot, { timeout: 5000 }).catch(async cause => {
+      throw Error(`${step}: the picture is not ready to accept both Heal clicks. ${await message()}`, { cause });
+    });
+    const [source, destination] = await target.jsonValue();
+    await target.dispose();
+    await page.mouse.click(...source);
+    if (!await page.evaluate(() => Boolean(retouchUI.source)))
+      throw Error(`${step}: first click did not pick a donor. ${await message()}`);
+    await page.mouse.click(...destination);
+    // Idle without a new record is an immediate failure, not a slow Heal.
+    const idle = await page.waitForFunction(() => !retouchUI.busy, null, { timeout: 30_000 }).catch(async cause => {
+      throw Error(`${step}: Heal did not finish within 30 s. ${await message()}`, { cause });
+    });
+    await idle.dispose();
+    const saved = await page.evaluate(({ i, size, feather, texture, opacity }) => {
+      const repairs = state.editDocument.repairs;
+      const repair = repairs[i]?.recipe;
+      return repairs.length === i + 1 && repair?.mode === 'heal' && repair.radius_px * 2 === size
+        && valuesEqual(repair.edge_feather, feather / 100) && valuesEqual(repair.texture_amount, texture / 100)
+        && valuesEqual(repair.strength, opacity / 100);
+    }, { ...recipe, i });
+    if (!saved) throw Error(`${step}: second click did not save the requested Heal. ${await message()}`);
+    await stable(page);
+  }
+}
+
 async function seed(page, id, recipe, rendition, zoom) {
   if (isRaw(id)) {
     if (!await page.evaluate(() => isRawSession(state.session))) return 'This source is not camera RAW.';
@@ -738,23 +791,7 @@ async function seed(page, id, recipe, rendition, zoom) {
     await setZoom(page, zoom);
   } else if (id === 'retouch') {
     await setZoom(page, 'fit');
-    await selectTab(page, 'retouch');
-    for (const [i, spot] of recipe.repairs.entries()) {
-      if (!await page.evaluate(() => retouchUI.active && retouchUI.mode === 'heal')) await page.locator('#retouch-mode-heal').click();
-      const points = await page.evaluate(async ({ spot, size, feather, texture, opacity }) => {
-        await ensureGeometryCoordinateMap();
-        for (const [key, value] of Object.entries({ size, feather, texture, opacity })) {
-          const control = retouchInput(key);
-          control.value = String(value);
-          control.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        const image = activePreviewElement().getBoundingClientRect();
-        return [spot.source, spot.destination].map(([fx, fy]) => [image.left + image.width * fx, image.top + image.height * fy]);
-      }, { ...recipe, spot });
-      for (const point of points) await page.mouse.click(...point);
-      await page.waitForFunction(count => state.editDocument.repairs.length > count && !retouchUI.busy, i, { timeout: LIMIT });
-      await stable(page);
-    }
+    await seedHeals(page, recipe);
     await setZoom(page, zoom);
   } else if (id === 'vignette' && await page.locator('#vignette-show-overlay').getAttribute('aria-pressed') === 'true') {
     await page.locator('#vignette-show-overlay').click();
@@ -906,12 +943,7 @@ async function performControl(page, measure, row, descriptor) {
     await (await reveal(page, showSelection)).click();
     await page.waitForFunction(() => document.querySelector('#hsl-selection-overlay')?.complete, null, { timeout: LIMIT });
   }
-  if (descriptor.repair) {
-    await page.evaluate(() => {
-      const repair = state.editDocument.repairs.at(-1);
-      if (repair) selectRetouchRepair(repair.id);
-    });
-  }
+  if (descriptor.repair) await page.locator('#retouch-list .local-adjustment-select').first().click();
   try { return await measure({ ...descriptor, step: row.step }, async locator => {
     if (descriptor.type === 'canvas') await canvasDrag(page, locator, descriptor.gesture);
     else if (descriptor.type === 'range') await pointerDrag(page, locator, descriptor.target);
