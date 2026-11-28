@@ -4,6 +4,7 @@ Windows charges private commit for each process in the app tree.
 """
 import ctypes
 import errno
+from itertools import count
 from ctypes import wintypes
 import os
 import platform
@@ -39,6 +40,7 @@ _waiting_until = 0
 _caches = {}
 _sample = (0, None)
 _sample_lock = Lock()
+_cache_revisions = count(1)
 _remote_claim = None
 grade_bytes_provider = lambda: 0
 NEO_RAM = 8 * 1024**3
@@ -104,11 +106,13 @@ def configure(chosen=None):
     return dict(memory_options(), ceilingBytes=ceiling, targetBytes=TARGET)
 
 
-def limit(share):
+def _share_limit(share, grade_trim):
     cap = LIMITS[share]
-    if share in GRADE_TRIMMED_SHARES and grade_cache_trim_active(grade_bytes_provider()):
-        return cap // 2
-    return cap
+    return cap // 2 if grade_trim and share in GRADE_TRIMMED_SHARES else cap
+
+
+def limit(share):
+    return _share_limit(share, share in GRADE_TRIMMED_SHARES and grade_cache_trim_active(grade_bytes_provider()))
 
 
 def trim_library_shares(caps=None):
@@ -180,12 +184,14 @@ def forget(key):
     with _lock: _caches.pop(key,None)
 
 
-def cache_snapshot():
+def cache_snapshot(grade_trim=None):
     with _lock:
         dead=[key for key,v in _caches.items() if v.get('trim') and v['trim']() is None]
         for key in dead: forget(key)
-        return {share:dict(bytes=sum(v['bytes'] for v in _caches.values() if v['share']==share),limitBytes=limit(share))
-                for share in LIMITS}
+        if grade_trim is None:
+            grade_trim = grade_cache_trim_active(grade_bytes_provider())
+        return {share:dict(bytes=sum(v['bytes'] for v in _caches.values() if v['share']==share),
+                           limitBytes=_share_limit(share, grade_trim)) for share in LIMITS}
 
 
 def reclaim(level='moderate', needed=None):
@@ -416,7 +422,13 @@ def snapshot(refresh=False, cached_only=False):
         reserved=sum(row[0] for row in _reservations.values())
         waiting=now<_waiting_until
     pressure=system_pressure()
-    grade_bytes=grade_bytes_provider()
+    with _lock:
+        grade_bytes = grade_bytes_provider()
+        grade_trim = grade_cache_trim_active(grade_bytes)
+        caches = cache_snapshot(grade_trim)
+        # The HTTP report and Desktop relay can both reuse a process census.
+        # Order their caps at capture, independently of the census or delivery.
+        cache_revision = next(_cache_revisions)
     safety_total=max(0,total-grade_bytes)
     level=pressure_level(safety_total,pressure)
     # A refused admission ("waiting") is reported for logs only. It is never
@@ -424,10 +436,10 @@ def snapshot(refresh=False, cached_only=False):
     measurement = 'private-commit' if os.name == 'nt' else 'proportional-resident'
     return dict(backendPid=os.getpid(), backendHeap=backend_heap(), totalBytes=total,workingSetBytes=sum(r['workingSetBytes'] for r in rows),
                 measurement='physical-footprint' if sys.platform=='darwin' else measurement,processes=rows,ceilingBytes=CEILING,
-                targetBytes=TARGET,reservedBytes=reserved,caches=cache_snapshot(),
+                targetBytes=TARGET,reservedBytes=reserved,caches=caches,cacheRevision=cache_revision,
                 pressure=pressure,level=level,waiting=waiting,budgetPressure=safety_total>TARGET,gradeBytes=grade_bytes,
                 sampleId=sample_time, gradePressure=pressure_level(total,pressure), unifiedMemory=unified_memory(),
-                gradeCacheTrim=grade_cache_trim_active(grade_bytes), reclaim=level!='none')
+                gradeCacheTrim=grade_trim, reclaim=level!='none')
 
 
 def refresh_after_scratch(additional_bytes):

@@ -705,3 +705,49 @@ def test_mac_sampler_skips_exited_children_but_rejects_unreadable_live(monkeypat
         assert sum(row["chargedBytes"] for row in result) == 40
         assert next(row for row in result if row["pid"] == 102)["name"] == "helper with spaces"
     assert 101 not in queried
+
+
+def test_memory_transports_order_caps_even_with_same_process_sample(tmp_path, monkeypatch):
+    import asyncio
+    import httpx
+    from fastapi import FastAPI
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.library_worker import LibraryWorker
+    from hdr_finisher.media_browser import MediaBrowserStore
+
+    monkeypatch.setenv("HDR_FINISHER_MEMORY_PROFILE", "unified-8gb")
+    monkeypatch.setattr(app_memory, "_sample", (123, []))
+    monkeypatch.setattr(app_memory, "system_pressure", lambda: "none")
+    held = 0
+    monkeypatch.setattr(app_memory, "grade_bytes_provider", lambda: held)
+    entered, release = Event(), Event()
+    real_snapshot = app_memory.snapshot
+
+    def snapshot(**kwargs):
+        result = real_snapshot(**kwargs)
+        if kwargs.get("refresh") is False:
+            entered.set()
+            assert release.wait(5)
+        return result
+
+    monkeypatch.setattr(app_memory, "snapshot", snapshot)
+    app = FastAPI()
+    app.include_router(create_library_router(LibraryWorker(tmp_path), MediaBrowserStore(tmp_path)))
+
+    async def check():
+        nonlocal held
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            desktop = asyncio.create_task(client.get("/api/library/memory"))
+            try:
+                assert await asyncio.to_thread(entered.wait, 4)
+                held = app_memory.LARGE_GRADE_BYTES
+                report = (await client.post("/api/library/memory-report", json={"sharp": 0})).json()
+            finally:
+                release.set()
+                relay = (await desktop).json()
+            assert relay["sampleId"] == report["sampleId"] == 123
+            assert relay["cacheRevision"] < report["cacheRevision"]
+            assert relay["caches"]["sharp"]["limitBytes"] == app_memory.LIMITS["sharp"]
+            assert report["caches"]["sharp"]["limitBytes"] == app_memory.LIMITS["sharp"] // 2
+
+    asyncio.run(check())

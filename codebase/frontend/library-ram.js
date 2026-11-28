@@ -18,6 +18,12 @@
     const other=used(share)-(exclude ? caches.get(exclude)?.bytes() || 0 : 0);
     return other+bytes<=limits[share];
   }
+  let cacheRevision=0;
+  function applyLimits(value) {
+    if (!Number.isSafeInteger(value.cacheRevision) || value.cacheRevision<=cacheRevision) return;
+    cacheRevision=value.cacheRevision;
+    for (const share of Object.keys(limits)) if (value.caches?.[share]) limits[share]=value.caches[share].limitBytes;
+  }
   let reports=Promise.resolve();
   function report() {
     // The timer and explicit reclaim both use the same backend report keys.
@@ -31,11 +37,11 @@
     const response=await fetch('/api/library/memory-report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({thumbnails:used('thumbnails'),sharp:used('sharp')})});
     if(!response.ok)throw Error('RAM owner unavailable');
     const value=await response.json();
-    for(const share of Object.keys(limits))limits[share]=value.caches[share].limitBytes;
+    applyLimits(value);
     enforce(); return value;
   }
   function apply(value) {
-    for(const share of Object.keys(limits))if(value.caches?.[share])limits[share]=value.caches[share].limitBytes;
+    applyLimits(value);
     enforce();
     // The main process decides when to trim (once per level rise, then per
     // cool-down); this only carries it out.

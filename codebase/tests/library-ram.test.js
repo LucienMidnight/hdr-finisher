@@ -11,16 +11,16 @@ test('overlapping reports send fresh byte counts in order even after a failed re
  const tick=()=>new Promise(resolve=>setImmediate(resolve));
  const requests=[];let sharp=300;
  const ram=owner((_url,options)=>new Promise(resolve=>requests.push({body:JSON.parse(options.body),resolve})));
- const limits=limitBytes=>({ok:true,json:async()=>({caches:{sharp:{limitBytes},thumbnails:{limitBytes}}})});
+ const limits=(limitBytes,cacheRevision)=>({ok:true,json:async()=>({cacheRevision,caches:{sharp:{limitBytes},thumbnails:{limitBytes}}})});
  ram.register('ready','sharp',()=>sharp,target=>{sharp=target;});
  const periodic=ram.report();await tick();assert.equal(requests[0].body.sharp,300);
  const reclaim=ram.report();await tick();assert.equal(requests.length,1);
- requests[0].resolve(limits(250));await periodic;await tick();
+ requests[0].resolve(limits(250,1));await periodic;await tick();
  assert.equal(requests[1].body.sharp,250,'report accounts for the completed trim');
  const failed=assert.rejects(reclaim,/RAM owner unavailable/);
  const next=ram.report();requests[1].resolve({ok:false});await failed;await tick();
  assert.equal(requests[2].body.sharp,250);
- requests[2].resolve(limits(200));await next;
+ requests[2].resolve(limits(200,2));await next;
  assert.equal(ram.limit('sharp'),200);assert.equal(sharp,200);
 });
 test('moderate pressure halves each share and critical pressure drops reconstructible pictures',()=>{
@@ -31,4 +31,27 @@ test('moderate pressure halves each share and critical pressure drops reconstruc
  ram.apply({pressure:'moderate',level:'moderate',reclaim:false,reclaimLevel:'none',budgetPressure:true,waiting:true});assert.equal(a,50);assert.equal(b,50);
  ram.apply({pressure:'moderate',level:'moderate',reclaim:true,reclaimLevel:'moderate'});assert.equal(a,25);assert.equal(b,25);
  ram.apply({pressure:'critical',level:'critical',reclaim:true,reclaimLevel:'critical'});assert.equal(a,0);assert.equal(b,0);
+});
+
+test('Desktop and HTTP apply the newest caps in either order without suppressing pressure reclaim',async()=>{
+ let resolveReport;
+ const ram=owner(()=>new Promise(resolve=>{resolveReport=resolve;}));
+ const caps=(cacheRevision,limitBytes)=>({cacheRevision,sampleId:1,caches:{sharp:{limitBytes},thumbnails:{limitBytes}}});
+ let sharp=300;
+ ram.register('ready','sharp',()=>sharp,target=>{sharp=target;});
+ const report=ram.report();
+ await new Promise(resolve=>setImmediate(resolve));
+ ram.apply(caps(2,200));
+ resolveReport({ok:true,json:async()=>caps(1,400)});
+ await report;
+ assert.equal(ram.limit('sharp'),200);
+ assert.equal(sharp,200);
+
+ const newer=ram.report();
+ await new Promise(resolve=>setImmediate(resolve));
+ resolveReport({ok:true,json:async()=>caps(4,500)});
+ await newer;
+ ram.apply({...caps(3,50),reclaim:true,reclaimLevel:'moderate'});
+ assert.equal(ram.limit('sharp'),500);
+ assert.equal(sharp,100,'a stale cap cannot trigger an eviction, but pressure still halves residency');
 });
