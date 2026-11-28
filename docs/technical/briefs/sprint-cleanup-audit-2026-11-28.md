@@ -51,7 +51,7 @@ Strictly cleanup, tuning, hardening and performance optimisation.
 | --- | --- | --- | --- |
 | 0 | done | Recon: layout, Grade module inventory, fast-test baseline (Node 1,583 pass, Python 5,194 pass, 0 fail; output 20 GB) | 3 Sol medium |
 | 1 | done | Plan reviewed and agreed with Neon | Coordinator + Neon |
-| 2a | afternoon | Wave 1: H (harness), T (tidy-up), R1, R2 | 4 workers |
+| 2a | afternoon (active) | Wave 1: H (harness), T (tidy-up), R1, R2 | 4 workers |
 | 2b | evening | Wave 2: R3, R4, R5, M1–M3 (review only) while H3 calibrates alone at the end | ≤ 4 at a time |
 | 2c | evening | Wave 3: M4–M6 (review only) | 3 workers |
 | 3 | night, quiet machine | Baseline module audit, serial, one runner, `caffeinate -dimsu`, on AC power | One runner; all others idle |
@@ -72,13 +72,13 @@ coordinator edits this table, from worker reports.
 
 | ID | Scope | Status | Result |
 | --- | --- | --- | --- |
-| T0 | Short "already well organised" summary (what is in good shape and should stay as it is) for the morning report, in `docs/technical/audits/2026-11-28-mac/repo-organisation.md` | todo | |
-| T1 | Move `tests/performance/fit-filtering-compare.test.js` under the fast-test glob (or add it to the documented glob) and refresh `tests/inventory.json` | todo | |
-| T2 | Move the tracked Round 4 reproduction source out of `codebase/output/predemosaic-round4-2026-11-20/` to `codebase/tools/denoise_eval/round4/`; fix links in the research report | todo | |
-| T3 | Repair the `AGENTS.md` documentation map (missing/unindexed files, archive counts, round 4 duplicate), master PRD "current version", code-map navigation (dated notes after the main heading) | todo | |
-| T4 | Archive finished briefs after carrying unresolved items into module PRDs (candidates: next-version investigation, backend startup reliability, RAW starting exposure, Library draw live). Do not archive by age | todo | |
-| T5 | Label finished prototypes and manual diagnostics in `codebase/tools/` (README note per folder or a `tools/README.md` index). Retire nothing that might be run by hand without listing it for Steve | todo | |
-| T6 | Triage the overlapping `check-library-jpeg-*.cjs` / `measure-library-jpeg.cjs` probes: report roles; merge only if clearly duplicate | todo | |
+| T0 | Short "already well organised" summary (what is in good shape and should stay as it is) for the morning report, in `docs/technical/audits/2026-11-28-mac/repo-organisation.md` | done | `repo-organisation.md` written (T-19) |
+| T1 | Move `tests/performance/fit-filtering-compare.test.js` under the fast-test glob (or add it to the documented glob) and refresh `tests/inventory.json` | done | fit-filtering tests in fast suite (T-1) |
+| T2 | Move the tracked Round 4 reproduction source out of `codebase/output/predemosaic-round4-2026-11-20/` to `codebase/tools/denoise_eval/round4/`; fix links in the research report | done | moved to `tools/denoise_eval/round4/`; rerun still needs untracked Round 3 source (T-21, open) |
+| T3 | Repair the `AGENTS.md` documentation map (missing/unindexed files, archive counts, round 4 duplicate), master PRD "current version", code-map navigation (dated notes after the main heading) | done | map, PRD version, code-map order fixed (T-3–T-7) |
+| T4 | Archive finished briefs after carrying unresolved items into module PRDs (candidates: next-version investigation, backend startup reliability, RAW starting exposure, Library draw live). Do not archive by age | done | 2 archived (T-8, T-9); RAW starting exposure and draw-live kept open (T-10, T-11) |
+| T5 | Label finished prototypes and manual diagnostics in `codebase/tools/` (README note per folder or a `tools/README.md` index). Retire nothing that might be run by hand without listing it for Steve | done | `codebase/tools/README.md` index (T-12–T-17) |
+| T6 | Triage the overlapping `check-library-jpeg-*.cjs` / `measure-library-jpeg.cjs` probes: report roles; merge only if clearly duplicate | done | roles documented, no merge (T-18) |
 
 Out of scope: splitting `webgpu-preview.js`, `webgpu-shaders.js`,
 `adjustments.py`, `render_cache.py`, `exporters.py`. T may write a seam map for
