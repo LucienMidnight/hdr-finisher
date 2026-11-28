@@ -1058,6 +1058,24 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 
 
 
+- `docs/technical/reviews/backend-delivery-review-2026-11-26.md`: delivery and
+
+  IO source review, check coverage and follow-ups.
+
+- `docs/technical/reports/m1-colour-follow-up-2026-11-15.md`: colour
+
+  errors remaining after the SDR Match clipping fix.
+
+- `docs/technical/reports/m1-print-stage-2026-11-15.md`: Film print-stage
+
+  control experiments for SDR Match.
+
+- `docs/technical/reports/n5-start-hdr-2026-11-16.md`: research-only inverse
+
+  Match experiment. Not exposed in the app.
+
+
+
 - `docs/technical/reports/release-check-0-9-4-2026-11-28.md`: local Mac
 
   v0.9.4 fast checks, Curves test fix and focused-run budget blocker.
@@ -1188,9 +1206,9 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 
   black screen, crop OOM, geometry audit, preview resolution stall).
 
-- `docs/technical/archive/`: 113 files of old evidence, prompts and briefs
+- `docs/technical/archive/`: 130 tracked files of old evidence, prompts and briefs
 
-  (`archive/briefs/` holds 54 finished briefs). History only. Includes
+  (`archive/briefs/` holds 69 finished briefs). History only. Includes
 
   `archive/briefs/library-resource-scheduler-design-2026-10-30.md`, the
 
@@ -1220,6 +1238,16 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
 
 
 
+Completed UI polish round 4 (pending visual sign-off):
+
+`docs/technical/archive/briefs/codex-brief-ui-polish-round-4-2026-11-06.md`
+
+(November 6: Sofia title font, Export switches/empty state/disabled action,
+
+menu wording, size label and Library toolbar; workflow tab font only).
+
+
+
 ### Briefs (current work)
 - `docs/technical/briefs/sprint-cleanup-audit-2026-11-28.md`: the current
   sprint. Cleanup, bug review and per-Grade-module performance audit (no new
@@ -1234,6 +1262,30 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
 
 - `docs/technical/briefs/sdr-match-tone-fit-2026-11-27.md`: picture-based
   SDR Tone/Highlight Compression fit and per-module HDR Match actions.
+
+- `docs/technical/briefs/backend-startup-reliability-2026-11-27.md`: startup
+
+  progress, process ownership and Windows validation.
+
+- `docs/technical/briefs/denoise-grain-gpu-design-2026-11-20.md`: Fine Grain
+
+  and Clean Grain GPU feasibility and bounded zoom design.
+
+- `docs/technical/briefs/denoise-mac-open-items-2026-11-20.md`: Mac Denoise
+
+  and Match checks, findings and remaining work.
+
+- `docs/technical/briefs/export-approved-followups-2026-11-27.md`: approved
+
+  delivery inactivity watchdog and TIFF follow-ups.
+
+- `docs/technical/briefs/export-speed-plan-2026-11-20.md`: CPU export
+
+  speed proposals and expected whole-export gains.
+
+- `docs/technical/briefs/gpu-export-memory-2026-11-20.md`: MacBook Neo GPU
+
+  export memory findings and the qualified Clean Grain Large SDR JPEG route.
 - `docs/technical/briefs/codex-brief-export-gpu-speed-2026-10-20.md`: GPU
 
   export speed.
@@ -1508,12 +1560,6 @@ Completed component-sheet pass (pending visual sign-off):
 
 graph frames/marks; review in `codebase/output/review/component-pass/`).
 
-- `docs/technical/briefs/codex-brief-ui-polish-round-4-2026-11-06.md`:
-
-  UI polish round 4 (Sofia Sans Semi Condensed titles, Export switch,
-
-  empty state and disabled button, menu capitals, small leftovers).
-
 Completed UI polish round 5 (pending visual sign-off):
 
 `docs/technical/archive/briefs/codex-brief-ui-polish-round-5-2026-11-06.md`
@@ -1523,6 +1569,12 @@ Completed UI polish round 5 (pending visual sign-off):
 
 
 ### Testing and release
+
+
+
+- `docs/technical/test-catalogue.md`: generated everyday test inventory and
+
+  release driver catalogue with per-platform timings.
 
 
 
@@ -1727,10 +1779,6 @@ Completed UI polish round 5 (pending visual sign-off):
   `git cat-file blob`, not `git checkout`, which rewrites endings on this
 
   machine.
-
-
-
-Completed UI polish round 4 (pending visual sign-off): `docs/technical/archive/briefs/codex-brief-ui-polish-round-4-2026-11-06.md` (November 6: Sofia title font, Export switches/empty state/disabled action, sentence-case menus, size label and Library toolbar; workflow tab font only).
 
 
 
