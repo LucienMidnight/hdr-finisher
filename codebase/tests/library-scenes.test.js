@@ -242,6 +242,18 @@ test('cancelling the source ask before its capacity refusal never requests CPU m
  assert.equal(scenes.snapshot().sources.waiting,0);
 });
 
+test('an invalidated plan cannot request GPU or CPU admission after waiting for navigation',async()=>{
+ const {scenes,refusal,asks,cpu,path}=capacitySetup();
+ const entered=gate(),navigation=gate();
+ const pending=scenes.load(path,640,undefined,10,null,{beforeSource:()=>{entered.resolve();return navigation.promise;}});
+ const stopped=assert.rejects(pending,{name:'AbortError'});
+ await entered.promise;
+ scenes.invalidate([path],{finishingOnly:true});
+ refusal.resolve();navigation.resolve();
+ await stopped;
+ assert.deepEqual(asks,[]);assert.deepEqual(cpu,[]);
+});
+
 test('temporary GPU admission keeps waiting without choosing CPU',async()=>{
  const held=gate();let sources=0,cpu=0;
  const {context,scenes}=setup({photo:{bytes:96e6}},async(_path,edge)=>({edge,key:'gpu'}));

@@ -158,8 +158,11 @@ window.HDRLibraryScenes = (() => {
       throw error;
     }
     await options.beforeSource?.();
-    window.HDRLibraryGrants?.promote(path,reviewPaths.size ? rank(path) : urgency);
     if (signal?.aborted) throw new DOMException("Cancelled","AbortError");
+    // Navigation can outlive the plan. Do not reserve memory for a result
+    // that loadOnce would have to discard after development.
+    if (generation!==(generations.get(path)||0)) throw new DOMException("Invalidated","AbortError");
+    window.HDRLibraryGrants?.promote(path,reviewPaths.size ? rank(path) : urgency);
     const previous = history.get(path);
     const elapsed = previous && previous.revision === plan.revision ? previous.ms : 0;
     const heavy = plan.bytes >= largeBytes || elapsed >= 2000;
