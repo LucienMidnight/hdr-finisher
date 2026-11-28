@@ -11,9 +11,9 @@ def test_commercial_strength_interpolates_in_stops(family,gain):
 
 
 @pytest.mark.parametrize("family", FAMILIES)
-def test_full_component_mixture_has_unit_energy_per_channel(family):
+def test_compact_mixture_has_unit_energy_per_channel(family):
     parts=components(family)
-    assert len(parts)==27
+    assert len(parts)==8
     np.testing.assert_allclose(np.sum([w for _,w in parts],axis=0),1,atol=2e-9,rtol=0)
     for size in [.25,1,4]:
         kernel=psf(family,100,size,32)
@@ -60,13 +60,33 @@ def test_halo_colour_moves_between_radii_without_channel_energy_change():
     np.testing.assert_allclose(kernel.sum(axis=(0,1)),1,atol=2e-9,rtol=0)
 
 
-def test_pinned_upstream_coefficients():
+def test_compact_psf_stays_close_to_pinned_upstream_response():
     import json
     from pathlib import Path
+    from hdr_finisher.lens_filter import bounded_axis
+
     golden=json.loads((Path(__file__).parent/"fixtures/lens-filter-upstream.json").read_text())
     for family,expected in golden.items():
-        actual=[[sigma,*weights] for sigma,weights in components(family)]
-        np.testing.assert_allclose(actual,expected,atol=2e-9,rtol=0)
+        for ppm, cap in [(36, 54), (240, 64), (240, 256)]:
+            old = np.zeros((2 * cap + 1, 2 * cap + 1, 3))
+            for sigma_um, *weights in expected:
+                axis = bounded_axis(sigma_um * ppm / 1000, cap)
+                reach = len(axis) // 2
+                region = slice(cap - reach, cap + reach + 1)
+                old[region, region] += np.outer(axis, axis)[..., None] * weights
+            new = psf(family, ppm, 1, cap)
+            r = new.shape[0] // 2
+            offsets = np.arange(-cap, cap + 1)
+            distances = np.hypot(offsets[:, None], offsets[None, :])
+            compact_distances = distances[cap - r:cap + r + 1, cap - r:cap + r + 1]
+            for radius in [0, 1, 2, 4, 8, 16, 32, 64, 128, 256]:
+                old_energy = old[distances <= radius].sum(axis=0)
+                new_energy = new[compact_distances <= radius].sum(axis=0)
+                # One percentage point at the strongest mix. We still hold
+                # finished CPU/GPU pixels to their separate parity caps.
+                np.testing.assert_allclose(new_energy * scatter_fraction(family, 2),
+                    old_energy * scatter_fraction(family, 2), atol=.01, rtol=0,
+                    err_msg=f"{family} {ppm=} {cap=} {radius=}")
 
 
 @pytest.mark.parametrize("field", ["bloom_enabled","bloom_amount","bloom_sensitivity","bloom_radius","bloom_highlight_detail"])

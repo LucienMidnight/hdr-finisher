@@ -1,8 +1,8 @@
 """Energy-conserving spektrafilm lens PSFs (GPL-3.0, revision 3bb2c2d).
 
-All 27 Gaussian components of the upstream exponential surrogate are retained.
-Each component is cropped at the existing spatial reach, then normalized. This
-keeps its share of scattered light; the omitted tail is reported separately.
+Eight calibrated Gaussian lobes approximate the original 27-part profile. Each
+lobe is cropped at the existing spatial reach and normalized so the filter has
+unit energy in each channel.
 """
 from __future__ import annotations
 
@@ -10,42 +10,64 @@ from functools import lru_cache
 import math
 import numpy as np
 
-# core/halo/bloom wavelengths (um), bloom exponent, group shares, warmth, gain.
-FAMILIES = {
-    "glimmerglass": (10., 50., 260., 3.2, (.60, .30, .10), 0., .65),
-    "black_pro_mist": (16., 95., 380., 3.5, (.40, .47, .13), .65, .75),
-    "pro_mist": (14., 150., 650., 2.9, (.28, .42, .30), .40, 1.05),
-    "cinebloom": (20., 200., 1000., 2.5, (.22, .30, .48), .85, 1.),
+
+# Fixed RGB point-spread fit, shared with frontend/lens-filters.js.
+# Reproduce the data with f2-fit-mist.py in the Film speed research.
+FAMILIES = {'glimmerglass': 0.65, 'black_pro_mist': 0.75, 'pro_mist': 1.05, 'cinebloom': 1.0}
+
+_LOBES = {
+    "glimmerglass": (
+        (2.8586666666667, (0.032853209790959, 0.032853209790959, 0.032853209790959)),
+        (8.6295556574403, (0.21895009393541, 0.21895009393541, 0.21895009393541)),
+        (18.024852179783, (0.23508133661919, 0.23508133661919, 0.23508133661919)),
+        (31.317289720818, (0.16727832028909, 0.16727832028909, 0.16727832028909)),
+        (53.6, (0.10919797623409, 0.10919797623409, 0.10919797623409)),
+        (113.65273884201, (0.12463324114035, 0.12463324114035, 0.12463324114035)),
+        (237.39041716342, (0.092273750210269, 0.092273750210269, 0.092273750210269)),
+        (716.61863950142, (0.019732071780643, 0.019732071780643, 0.019732071780643)),
+    ),
+    "black_pro_mist": (
+        (5.7173333333333, (0.03650113687862, 0.03542504637576, 0.033927826668998)),
+        (16.301114179397, (0.17331618727424, 0.18173927414435, 0.19345874534141)),
+        (36.5664, (0.1701290440933, 0.18714983719562, 0.21083173643159)),
+        (72.371, (0.10366795987063, 0.1647930777317, 0.24983957781376)),
+        (144.00895512152, (0.14108692443496, 0.15664110952495, 0.1782824420871)),
+        (262.998, (0.21902214507617, 0.15852337156924, 0.074348336394401)),
+        (428.03137499537, (0.13467379343994, 0.095698436409339, 0.041470030462787)),
+        (1060.9966803013, (0.021602808932134, 0.020029847049044, 0.017841304799958)),
+    ),
+    "pro_mist": (
+        (4.8916683035179, (0.022952312550568, 0.023137847401982, 0.023395963352748)),
+        (14.220266666667, (0.13159699610287, 0.13075421971789, 0.12958174982215)),
+        (36.400845613549, (0.13300392502319, 0.14328199401118, 0.15758083613526)),
+        (99.297590155987, (0.057141537673895, 0.07841598751587, 0.10801298671122)),
+        (148.34386948445, (0.096585368539011, 0.12261301205631, 0.15882265084651)),
+        (331.07881497737, (0.27834348429207, 0.25141740617217, 0.21395786581424)),
+        (719.784, (0.22231353287121, 0.19043946329284, 0.14609628080535)),
+        (2015.6745713309, (0.058062842947178, 0.059940069831763, 0.062551666512533)),
+    ),
+    "cinebloom": (
+        (7.0029096448282, (0.017774515198305, 0.017768118857427, 0.017703834322488)),
+        (19.306500956665, (0.090891522179807, 0.090758780084809, 0.090821854818971)),
+        (45.708, (0.099897577622578, 0.1088662305873, 0.12051405052487)),
+        (107.2, (0.023794705912834, 0.053230673283036, 0.093881143708257)),
+        (214.4, (0.096575167696022, 0.13705728569749, 0.18757643785759)),
+        (553.68, (0.33230701653993, 0.27306520769651, 0.19340597973477)),
+        (1340, (0.24886284024421, 0.2255017315743, 0.19810727304613)),
+        (4613.1633180764, (0.089896654606316, 0.093751972219122, 0.097989425986919)),
+    ),
 }
-GAUSSIAN_FIT = ((.1633, .5360), (.6496, 1.5236), (.1870, 2.7684))
 
 
 def scatter_fraction(family: str, strength: float) -> float:
     if family == "none":
         return 0.
     base = np.interp(math.log2(max(strength, 1e-6)), [-3,-2,-1,0,1], [.10,.20,.35,.55,.75])
-    return float(np.clip(base * FAMILIES[family][-1], 0., .99))
+    return float(np.clip(base * FAMILIES[family], 0., .99))
 
 
-@lru_cache(maxsize=4)
 def components(family: str) -> tuple:
-    cfg = FAMILIES[family]
-    result = []
-    fit_total = sum(a for a, _ in GAUSSIAN_FIT)  # upstream rounded amplitudes sum .9999
-    for group, (spread, count) in enumerate(((1.5,2),(2.,3),(2.5,4))):
-        wavelengths = np.geomspace(cfg[group]/spread, cfg[group]*spread, count)
-        weights = wavelengths ** (2-cfg[3]) if group == 2 else np.ones(count)
-        weights /= weights.sum()
-        rgb_weights = np.tile(weights, (3,1))
-        if group == 1:
-            gradient = np.linspace(-1., 1., count)
-            gradient -= np.average(gradient, weights=weights)
-            rgb_weights = np.maximum(weights * (1 + cfg[5]*np.array([1.30,.15,-1.45])[:,None]*gradient), 0)
-            rgb_weights /= rgb_weights.sum(axis=1)[:,None]
-        for j, wavelength in enumerate(wavelengths):
-            for amplitude, ratio in GAUSSIAN_FIT:
-                result.append((float(wavelength*ratio), tuple(float(v) for v in rgb_weights[:,j]*cfg[4][group]*amplitude/fit_total)))
-    return tuple(result)
+    return _LOBES[family]
 
 
 def bounded_axis(sigma: float, cap: int) -> np.ndarray:

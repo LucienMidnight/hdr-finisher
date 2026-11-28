@@ -36,6 +36,44 @@ less certain, but the ranges do not overlap.
 
 Raw timings: `codebase/output/f1-grain/cpu-export.json`.
 
+## November 28, 2026 — Film Mist cache-miss benchmark (F2)
+
+MacBook Neo, Apple A18 Pro, 8 GB, 1408×794 at 2×, shared GPU lock.
+HDR Grade Exposure drags on real RAWs with Portra 400, Black Pro-Mist
+(strength 0.3, size 1, 35 mm), Halation and Scan enabled, Grain off to
+isolate Mist. Values are GPU milliseconds from the weight pass through the
+last blur pass, with one untraced warmup, three traced drags and cache hits
+excluded. At 100%, each sample sums the native viewport tiles' Mist time,
+excluding the separate reduced continuity picture. Values are medians and
+ranges, not the whole wait the user sees.
+
+| Black Pro-Mist cache miss | Old 27 lobes, `aee3d656` | Eight lobes with symmetric taps, `e8c183db` |
+| --- | ---: | ---: |
+| IMG_7723.CR3, 24 MP Fit | 105.15 (98.37–111.94) | 19.01 (18.81–27.20) |
+| DSC00636.ARW, 50 MP Fit | 85.92 (80.28–90.77) | 16.25 (16.12–24.77) |
+| IMG_7723.CR3, 100%, 24 native tiles | 266.90 (239.34–278.27) | 80.81 (74.91–87.36) |
+| DSC00636.ARW, 100%, 21 native tiles | 297.27 (267.78–310.18) | 82.51 (76.81–86.77) |
+
+Both Fit medians are below 25 ms. Each Canon drag's first miss was 25.95–27.20
+ms, while all 19 later Canon misses were 18.81–19.40 ms. The Sony's first misses
+were 23.46–24.77 ms. Before symmetric weight reuse, the eight-lobe Canon trial
+at `7e689ff3` was 24.77 ms median (23.53–32.77). The timing does not qualify
+the whole Film stack's first presentation or settle, which also includes Grain.
+
+On the same Neo, forced-CPU native SDR JPEG export (quality 90, decoded source,
+same Film recipe, Grain off). Three interleaved samples per version measured
+with the shared lock, changing only the Mist kernel from `aee3d656` to
+`7e689ff3`. Times in seconds are medians (ranges).
+
+| Photo | Whole export before → after | Mist stage before → after |
+| --- | ---: | ---: |
+| IMG_7723.CR3, 24 MP | 21.21 (20.93–27.14) → 19.69 (17.64–22.11) | 5.41 (5.01–7.48) → 4.96 (4.84–5.81) |
+| DSC00636.ARW, 50 MP | 39.94 (39.72–42.08) → 41.18 (39.70–41.54) | 10.64 (10.40–13.84) → 10.59 (10.23–11.07) |
+
+The 24 MP export median was 7.2% shorter and the 50 MP median was 3.1% longer.
+The ranges overlap at both sizes, so this does not establish a reliable CPU
+export speedup. Full-size CPU convolution retains the same bounded FFT blocks.
+
 ## November 28, 2026 — Grade audit first presented GPU frame
 
 MacBook Neo, A18 Pro, 8 GB, 1408×794 at 2×, mains power, shared GPU lock.
