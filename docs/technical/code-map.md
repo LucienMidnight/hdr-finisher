@@ -1,174 +1,4 @@
-## November 27: Film Look dropdown previews
-
-`film-select-preview.js` binds native base-select option focus to a temporary
-recipe transaction; `app-boot.js` routes only Film selects through it.
-`edit-commands.js` excludes those drafts from document/history sync, while
-`adjustment-controls.js` renders committed-only controls and markers.
-`film-select-preview.test.js` covers no-op/cancel/commit/save races;
-`helpers/film-select-preview-ui.cjs` exercises the actual picker, history,
-redo and stale coordinator tokens through the existing Film panel driver.
-`helpers/indicator-dots.cjs` checks shared panel headings in three themes.
-
 # Code map
-
-## November 16: interruptible Grade preview work
-
-`zoom-navigation.js` retires old-scale coordinator work before zoom dispatch;
-`render-coordinator.js` gives catch-up background priority, scale identity and
-pan cancellation. `webgpu-preview.js` fences its existing tile batches only for
-preview catch-up. `app-boot.js` keeps the watchdog out of queued/device-fenced
-scheduler work. `scope-requests.js` defers first-picture GPU scopes and cancels
-obsolete CPU scopes at GPU handoff. No shader, budget or delivery route changes.
-
-`tests/performance/stacked-raw-latency.js` measures native input, GPU completion,
-zoom/pan, tiers, RAW/Film ablations and controlled queued-catch-up races on one
-reused RAW/sidecar copy. `--before-zoom` restores former scheduling inside the
-disposable renderer; small final crops check exact displayed-pixel regression.
-`preview-watchdog.test.js`, `scope-gpu-handoff.test.js` and the coordinator tests
-cover real-busy versus orphaned work, cancellation and preserved CPU fallback.
-
-## November 17: optional RAW Pixel cleanup
-
-`backend/hdr_finisher/raw_pixel_cleanup.py` owns the provisional per-phase noise
-fit, unchanged bright-only hot-pixel detection and cleanup ordering.
-`raw_speck_cleanup.py` owns the optional signed soft noise-envelope clamp,
-fixed absolute floor, component/similarity protection and bounded original-context
-strips. `raw_import.py` / `library_cpu_bands.py` run both before highlight
-evidence/AHD. `library_gpu_raw.py` runs the same CPU sensor step when speck
-cleanup is enabled, marking `pixel_cleanup_applied` to suppress a second hot
-filter; the hot-only path still passes its profile to GPU normalization in
-`frontend/library-gpu-raw.js`. No new shader, cache or budget.
-
-`session-import.js` / `app-boot.js` own the existing-token checkboxes, release-only
-threshold and re-development. `sessions.py` / `edit-commands.js` restore RAW
-source pixels on Undo/Redo. `RawImportSettings.pixel_cleanup` participates in
-saved recipes, development identities and selective paste. `test_raw_pixel_cleanup.py`,
-`test_raw_speck_cleanup.py`, `test_raw_pixel_cleanup_state.py` and
-`raw-pixel-cleanup.test.js` check sensor behavior, exact Off development,
-shared GPU sensor transport, state and saving. `raw-pixel-cleanup.js` /
-`helpers/raw_pixel_cleanup_fixture.py` cover GPU parity and byte-identical
-old/explicit-Off recipes. `raw-pixel-cleanup-delivery.js` reuses the real-RAW
-Edge colour/Library/Proof/export check, restored controls, no development on
-slider input, one on release and Reset. `tools/measure_raw_specks.py` measures
-native added development cost and absolute-floor comparisons read-only under
-the shared machine lock. Outcomes are in Import/RAW and the performance table.
-
-## November 17: signed Bayer RAW integration
-
-`backend/hdr_finisher/signed_ahd.c` implements bounded signed AHD;
-`signed_raw.py` loads its native library and owns strip/half-size/orientation
-handling. `tools/build_signed_ahd.py` builds it for setup and both PyInstaller
-specs; Flatpak compiles it in the SDK. No runtime compiler is required.
-`raw_import.py`, `library_cpu_bands.py` and the Library quick transport consume
-it. `frontend/library-gpu-raw.js` shares the signed Bayer/Lab/linear tail;
-`library-rgb-gpu.js` bypasses source projection only for DNG, not ordinary RGB.
-`test_signed_ahd.py`, `test_signed_raw_development.py`, `test_library_gpu_raw.py` and the focused
-`signed-raw-parity.js` / `helpers/signed_raw_fixture.py` cover signed behavior.
-X-Trans and the full GPU/delivery/package qualification remain open.
-
-## November 16: safe linked SDR after Match
-
-`backend/hdr_finisher/sdr_link.py` selects the trial output tail and checks
-linked-only target-relative ordering plus unchanged body/white-growth/exposure
-gates. `sdr_match.py` falls back to its independent fitter on rejection.
-`adjustments.py` and `webgpu-shaders.js` share HDR creative/Film/local semantics
-with an SDR-only output tail; `gpu-params.js` selects common scene parameters.
-`sessions.py`, `sdr-match-ui.js` and `control-panel.css` own atomic link/unlink,
-local/history behaviour and the visible panel. `hsl_sampling.py` / `render_cache.py`
-select the HDR hue stage while linked. `library_paste.py` excludes link metadata
-and unlinks SDR creative pastes. No new pixel cache or budget.
-
-`tests/test_sdr_link.py`, `sdr-linked-render.js`, `sdr-linked-interaction.js`
-cover history, bypass/overlap/hue masks, real app and pre-encode CPU/GPU/Proof.
-`tools/qualify_sdr_link.py` reproduces both ordering policies over the original
-49 cases. `tests/performance/sdr-linked-slider.js` records whole waits with the
-machine window and an isolated former-eager-prefix before condition.
-
-
-## November 16: actual finished delivery inputs in tests
-
-The unpackaged Electron runner enables `tests/helpers/delivery_capture/` only
-for delivery-comparison drivers. Its Python startup hook records the actual
-finished export inputs (including locals, finishing, framing and watermark),
-not a reconstructed recipe. `tests/helpers/delivery_comparison.py` separates
-the unchanged pre-encode renderer gate from report-only own-source encoding
-fidelity and decoded-file pair diagnostics. Captures live in the disposable
-test profile and are removed with it; no production encoder or default changes.
-
-`codebase/tools/encoding-fidelity-fixes.py` is opt-in CPU research, not a
-shipping encoder path. It reuses finished capture arrays or the approved
-1024px whole-photo recipes; measures preparation, compression and ceiling
-correction separately; and tries decoded-base gain fitting, unfiltered maps,
-private libavif range/colour-space options and lossless JXL. Its alternate
-12-bit AVIF reconstruction is a measurement diagnostic only. The private
-libavif baseline must match shipping bytes; temporary encodes and patches
-never replace bundled binaries. `tests/test_encoding_fidelity_options.py`
-checks input immutability, restoration on exceptions and source-patch guards.
-
-## November 16: isolated equal-input Film research
-
-`codebase/tools/film_equal_input_trial.py` runs opt-in charts, reduced shared
-RAWs, read-only saved-grade comparisons, output-tail ablations and CPU timings
-against an optional frozen backend. It never materializes shipping recipes or
-changes the processing order. `film_equal_input_trial.cjs` is the isolated GPU
-prototype; its first compilation failed and the correction is GPU-unvalidated.
-Both are diagnostic-only in the release inventory. Results and limitations:
-`reports/film-look-equal-input-trial-2026-11-16.md`.
-
-`codebase/tools/linked_sdr_tail_probe.py` re-renders the 49-case baseline and
-searches simple post-Film Exposure/Saturation/HC/gamut alternatives on the two
-original charts. It never imports into the app or edits a recipe; the failed
-acceptance checkpoint leaves linking unimplemented. Behavioural tool checks:
-`codebase/tests/test_linked_sdr_tail_probe.py`. Results are section 9 of the same
-report; each JSON fingerprints its code and inputs.
-
-## November 16: JPEG Ultra HDR drift research
-
-`codebase/tools/jpeg_encoding_drift_probe.py` is a non-shipping diagnostic:
-it instruments a separately downloaded pinned libultrahdr source tree, dumps
-pre-JPEG map stages, and measures codec sensitivity, own-source fidelity and
-partial-headroom renditions. It does not replace bundled encoders or touch
-production settings. Findings: `reports/encoding-drift-jpeg-ultrahdr-2026-11-16.md`.
-
-## November 15: H1 colour-picking interactions
-
-`frontend/hsl-panel.js` owns per-activation HSL sample acceptance;
-`frontend/mask-gestures.js` waits for acknowledged edits before Local Hue/Luma
-sampling and binds replies to the current lane/mask/gesture.
-`tests/hsl-picking.js` exercises real-RAW clicks, wheel and sampling-gizmo
-gestures, cancelled results and an overlapping save in both lanes.
-`tests/hsl-picker.test.js`, `mask-sampling.test.js` and
-`test_hsl_integration.py` check asynchronous results and clicked-pixel/mask
-correctness without depending on source wording.
-
-## November 15: button tier review
-
-`codebase/tools/button-tiers-review.cjs` runs through the Electron harness and
-shared GPU lock, measuring 30px panel / 26px compact actions in all three
-themes at 2560x1440. Crops and geometry overwrite
-`codebase/output/review/button-tiers/`; it uses a generated disposable image
-and never saves changes to a real project.
-
-
-## November 14: native source-stream admission
-
-`render_cache.SessionRenderCache.native_source_stream` proves when a GPU upload
-can borrow an existing native float32 lane without resizing or geometry work.
-`main.webgpu_proxy_stream` then uses `resource_preflight`'s bounded-strip host
-estimate; all other sources retain full host preflight. No new cache is added.
-`tests/test_native_source_stream.py` covers exact bytes, source reuse, reserve
-refusal and exclusion of allocating paths.
-
-## November 13: compact grant diagnostics
-
-Library jobs emit library_grant_completed on completion, failure or cancellation,
-with outcome, monotonic asked/granted/finished times, wait/run milliseconds and
-shared grant fields. asked_fields/granted_fields store only earlier values that
-differ from the final shared fields. Exceptional grant events remain. The regular
-memory census emits library_grant_stalled once per waiting/running phase after
-60 seconds (diagnostic only; scheduling unchanged). No existing general grant
-stall threshold/report was present.
-
 
 Where things live after the October 8 modularization sprint. Read this before
 searching the code. The [sprint PRD](../product/archive/Codebase_Modularization_Sprint_PRD_2026-10-06.md)
@@ -893,7 +723,179 @@ registered `jpegxl-high-fidelity.js --native-photo NAME` measures the complete
 Electron tree and full Proof identity. Both use approved originals without
 per-run photo copies. Limits and final scoped results live in Memory and
 caches, Export/Proof and the performance table.
-## November 16: offline RawNIND Denoise prototypes
+
+## Recent changes
+
+### November 27: Film Look dropdown previews
+
+`film-select-preview.js` binds native base-select option focus to a temporary
+recipe transaction; `app-boot.js` routes only Film selects through it.
+`edit-commands.js` excludes those drafts from document/history sync, while
+`adjustment-controls.js` renders committed-only controls and markers.
+`film-select-preview.test.js` covers no-op/cancel/commit/save races;
+`helpers/film-select-preview-ui.cjs` exercises the actual picker, history,
+redo and stale coordinator tokens through the existing Film panel driver.
+`helpers/indicator-dots.cjs` checks shared panel headings in three themes.
+
+### November 16: interruptible Grade preview work
+
+`zoom-navigation.js` retires old-scale coordinator work before zoom dispatch;
+`render-coordinator.js` gives catch-up background priority, scale identity and
+pan cancellation. `webgpu-preview.js` fences its existing tile batches only for
+preview catch-up. `app-boot.js` keeps the watchdog out of queued/device-fenced
+scheduler work. `scope-requests.js` defers first-picture GPU scopes and cancels
+obsolete CPU scopes at GPU handoff. No shader, budget or delivery route changes.
+
+`tests/performance/stacked-raw-latency.js` measures native input, GPU completion,
+zoom/pan, tiers, RAW/Film ablations and controlled queued-catch-up races on one
+reused RAW/sidecar copy. `--before-zoom` restores former scheduling inside the
+disposable renderer; small final crops check exact displayed-pixel regression.
+`preview-watchdog.test.js`, `scope-gpu-handoff.test.js` and the coordinator tests
+cover real-busy versus orphaned work, cancellation and preserved CPU fallback.
+
+### November 17: optional RAW Pixel cleanup
+
+`backend/hdr_finisher/raw_pixel_cleanup.py` owns the provisional per-phase noise
+fit, unchanged bright-only hot-pixel detection and cleanup ordering.
+`raw_speck_cleanup.py` owns the optional signed soft noise-envelope clamp,
+fixed absolute floor, component/similarity protection and bounded original-context
+strips. `raw_import.py` / `library_cpu_bands.py` run both before highlight
+evidence/AHD. `library_gpu_raw.py` runs the same CPU sensor step when speck
+cleanup is enabled, marking `pixel_cleanup_applied` to suppress a second hot
+filter; the hot-only path still passes its profile to GPU normalization in
+`frontend/library-gpu-raw.js`. No new shader, cache or budget.
+
+`session-import.js` / `app-boot.js` own the existing-token checkboxes, release-only
+threshold and re-development. `sessions.py` / `edit-commands.js` restore RAW
+source pixels on Undo/Redo. `RawImportSettings.pixel_cleanup` participates in
+saved recipes, development identities and selective paste. `test_raw_pixel_cleanup.py`,
+`test_raw_speck_cleanup.py`, `test_raw_pixel_cleanup_state.py` and
+`raw-pixel-cleanup.test.js` check sensor behavior, exact Off development,
+shared GPU sensor transport, state and saving. `raw-pixel-cleanup.js` /
+`helpers/raw_pixel_cleanup_fixture.py` cover GPU parity and byte-identical
+old/explicit-Off recipes. `raw-pixel-cleanup-delivery.js` reuses the real-RAW
+Edge colour/Library/Proof/export check, restored controls, no development on
+slider input, one on release and Reset. `tools/measure_raw_specks.py` measures
+native added development cost and absolute-floor comparisons read-only under
+the shared machine lock. Outcomes are in Import/RAW and the performance table.
+
+### November 17: signed Bayer RAW integration
+
+`backend/hdr_finisher/signed_ahd.c` implements bounded signed AHD;
+`signed_raw.py` loads its native library and owns strip/half-size/orientation
+handling. `tools/build_signed_ahd.py` builds it for setup and both PyInstaller
+specs; Flatpak compiles it in the SDK. No runtime compiler is required.
+`raw_import.py`, `library_cpu_bands.py` and the Library quick transport consume
+it. `frontend/library-gpu-raw.js` shares the signed Bayer/Lab/linear tail;
+`library-rgb-gpu.js` bypasses source projection only for DNG, not ordinary RGB.
+`test_signed_ahd.py`, `test_signed_raw_development.py`, `test_library_gpu_raw.py` and the focused
+`signed-raw-parity.js` / `helpers/signed_raw_fixture.py` cover signed behavior.
+X-Trans and the full GPU/delivery/package qualification remain open.
+
+### November 16: safe linked SDR after Match
+
+`backend/hdr_finisher/sdr_link.py` selects the trial output tail and checks
+linked-only target-relative ordering plus unchanged body/white-growth/exposure
+gates. `sdr_match.py` falls back to its independent fitter on rejection.
+`adjustments.py` and `webgpu-shaders.js` share HDR creative/Film/local semantics
+with an SDR-only output tail; `gpu-params.js` selects common scene parameters.
+`sessions.py`, `sdr-match-ui.js` and `control-panel.css` own atomic link/unlink,
+local/history behaviour and the visible panel. `hsl_sampling.py` / `render_cache.py`
+select the HDR hue stage while linked. `library_paste.py` excludes link metadata
+and unlinks SDR creative pastes. No new pixel cache or budget.
+
+`tests/test_sdr_link.py`, `sdr-linked-render.js`, `sdr-linked-interaction.js`
+cover history, bypass/overlap/hue masks, real app and pre-encode CPU/GPU/Proof.
+`tools/qualify_sdr_link.py` reproduces both ordering policies over the original
+49 cases. `tests/performance/sdr-linked-slider.js` records whole waits with the
+machine window and an isolated former-eager-prefix before condition.
+
+
+### November 16: actual finished delivery inputs in tests
+
+The unpackaged Electron runner enables `tests/helpers/delivery_capture/` only
+for delivery-comparison drivers. Its Python startup hook records the actual
+finished export inputs (including locals, finishing, framing and watermark),
+not a reconstructed recipe. `tests/helpers/delivery_comparison.py` separates
+the unchanged pre-encode renderer gate from report-only own-source encoding
+fidelity and decoded-file pair diagnostics. Captures live in the disposable
+test profile and are removed with it; no production encoder or default changes.
+
+`codebase/tools/encoding-fidelity-fixes.py` is opt-in CPU research, not a
+shipping encoder path. It reuses finished capture arrays or the approved
+1024px whole-photo recipes; measures preparation, compression and ceiling
+correction separately; and tries decoded-base gain fitting, unfiltered maps,
+private libavif range/colour-space options and lossless JXL. Its alternate
+12-bit AVIF reconstruction is a measurement diagnostic only. The private
+libavif baseline must match shipping bytes; temporary encodes and patches
+never replace bundled binaries. `tests/test_encoding_fidelity_options.py`
+checks input immutability, restoration on exceptions and source-patch guards.
+
+### November 16: isolated equal-input Film research
+
+`codebase/tools/film_equal_input_trial.py` runs opt-in charts, reduced shared
+RAWs, read-only saved-grade comparisons, output-tail ablations and CPU timings
+against an optional frozen backend. It never materializes shipping recipes or
+changes the processing order. `film_equal_input_trial.cjs` is the isolated GPU
+prototype; its first compilation failed and the correction is GPU-unvalidated.
+Both are diagnostic-only in the release inventory. Results and limitations:
+`reports/film-look-equal-input-trial-2026-11-16.md`.
+
+`codebase/tools/linked_sdr_tail_probe.py` re-renders the 49-case baseline and
+searches simple post-Film Exposure/Saturation/HC/gamut alternatives on the two
+original charts. It never imports into the app or edits a recipe; the failed
+acceptance checkpoint leaves linking unimplemented. Behavioural tool checks:
+`codebase/tests/test_linked_sdr_tail_probe.py`. Results are section 9 of the same
+report; each JSON fingerprints its code and inputs.
+
+### November 16: JPEG Ultra HDR drift research
+
+`codebase/tools/jpeg_encoding_drift_probe.py` is a non-shipping diagnostic:
+it instruments a separately downloaded pinned libultrahdr source tree, dumps
+pre-JPEG map stages, and measures codec sensitivity, own-source fidelity and
+partial-headroom renditions. It does not replace bundled encoders or touch
+production settings. Findings: `reports/encoding-drift-jpeg-ultrahdr-2026-11-16.md`.
+
+### November 15: H1 colour-picking interactions
+
+`frontend/hsl-panel.js` owns per-activation HSL sample acceptance;
+`frontend/mask-gestures.js` waits for acknowledged edits before Local Hue/Luma
+sampling and binds replies to the current lane/mask/gesture.
+`tests/hsl-picking.js` exercises real-RAW clicks, wheel and sampling-gizmo
+gestures, cancelled results and an overlapping save in both lanes.
+`tests/hsl-picker.test.js`, `mask-sampling.test.js` and
+`test_hsl_integration.py` check asynchronous results and clicked-pixel/mask
+correctness without depending on source wording.
+
+### November 15: button tier review
+
+`codebase/tools/button-tiers-review.cjs` runs through the Electron harness and
+shared GPU lock, measuring 30px panel / 26px compact actions in all three
+themes at 2560x1440. Crops and geometry overwrite
+`codebase/output/review/button-tiers/`; it uses a generated disposable image
+and never saves changes to a real project.
+
+
+### November 14: native source-stream admission
+
+`render_cache.SessionRenderCache.native_source_stream` proves when a GPU upload
+can borrow an existing native float32 lane without resizing or geometry work.
+`main.webgpu_proxy_stream` then uses `resource_preflight`'s bounded-strip host
+estimate; all other sources retain full host preflight. No new cache is added.
+`tests/test_native_source_stream.py` covers exact bytes, source reuse, reserve
+refusal and exclusion of allocating paths.
+
+### November 13: compact grant diagnostics
+
+Library jobs emit library_grant_completed on completion, failure or cancellation,
+with outcome, monotonic asked/granted/finished times, wait/run milliseconds and
+shared grant fields. asked_fields/granted_fields store only earlier values that
+differ from the final shared fields. Exceptional grant events remain. The regular
+memory census emits library_grant_stalled once per waiting/running phase after
+60 seconds (diagnostic only; scheduling unchanged). No existing general grant
+stall threshold/report was present.
+
+### November 16: offline RawNIND Denoise prototypes
 
 `codebase/tools/denoise_eval/candidates/rawnind.py` contains optional CPU ONNX
 linear/Bayer adapters, bounded phase-aware tile gathering, one global gain and
@@ -912,7 +914,7 @@ checks mask/blend results, Bayer phases and the unchanged original-sensor gain
 anchor. These are offline experiments, never production imports; findings:
 [AI highlights](research/denoise-v1-2026-11-16/ai-highlights.md).
 
-## November 26: portable Denoise research builds
+### November 26: portable Denoise research builds
 
 `codebase/tools/denoise_eval/candidates/native_build.py` builds the offline
 signed-AHD and LMMSE research libraries: discovered Visual C++ on Windows,
