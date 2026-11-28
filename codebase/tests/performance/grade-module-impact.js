@@ -16,7 +16,15 @@ const { MODULES, PROBES, CLOCKS, MEMORY, recipeHash, stats, impacts,
 const { photosRoot } = require('../helpers/photos-root.cjs');
 
 const PHOTOS = { typical: 'IMG_7723.CR3', large: 'DSC00636.ARW', noisy: 'IMG_0790.CR2' };
-const METHODS = ['clean_grain', 'standard', 'micro_grain'];
+const RAW_PHOTOS = { 'raw.lens': '_DSC7970.ARW', 'raw.highlights': 'IMG_3129.CR2' };
+const SIMPLE = { amount: .90, luminance: .85, color_noise: .90, detail_recovery: .35,
+  finest_noise: .75, fine_noise: .70, medium_noise: .65, coarse_noise: .60 };
+const DENOISE = {
+  clean_grain: { method: 'clean_grain', ...SIMPLE, grain_evenness: 1, color_splotches: 1,
+    clean_splotches: true, clean_fringes: true, protect_color_edges: false, splotch_size: 'small' },
+  standard: { method: 'standard', ...SIMPLE },
+  micro_grain: { method: 'micro_grain', micro_luminance: .85, micro_color: .85, micro_detail: .35 },
+};
 const DRIVE = 'tests/performance/grade-module-impact.js';
 const LIMIT = 120_000;
 const eye = key => `[data-section-path="${key}"]`;
@@ -26,33 +34,46 @@ const eye = key => `[data-section-path="${key}"]`;
 const RECIPES = {
   baseline: {},
   'raw.cleanup': { on: { remove_hot_pixels: true, even_out_specks: true, speck_threshold: 2.3 },
-    off: { remove_hot_pixels: false, even_out_specks: false } },
+    off: { remove_hot_pixels: false, even_out_specks: false, speck_threshold: 2.3 } },
   'raw.lens': { on: { mode: 'auto', distortion: true, chromatic_aberration: true, vignetting: true },
-    off: { mode: 'off' } },
-  'raw.highlights': { on: { enabled: true, method: 'opposed_color_v1', clipping_threshold: .96 },
-    off: { enabled: false } },
-  denoise: { methods: METHODS, enabled: true },
+    off: { mode: 'off', distortion: true, chromatic_aberration: true, vignetting: true } },
+  'raw.highlights': { on: { enabled: true, method: 'opposed_color_v1', clipping_threshold: .96, edge_colour_expand_percent: .5 },
+    off: { enabled: false, method: 'opposed_color_v1', clipping_threshold: .96, edge_colour_expand_percent: .5 } },
+  denoise: { methods: DENOISE },
   tone: { changes: { '$lane.exposure': .55, '$lane.contrast': .18 } },
-  bands: { band: { adjustment_ev: .8 } },
+  bands: { nodes: [[-6, 0], [-3, 0], [0, .8], [3, 0], [6, 0]], smoothing: .5 },
   curves: { changes: { '$lane.luma_curve': [[0, 0], [.25, .19], [.5, .58], [.75, .83], [1, 1]] } },
-  highlight_compression: { changes: { '$lane.exposure': 3 }, hdr: { 'hdr.highlight_compression_target_nits': 600,
-    'hdr.highlight_compression_start_nits': 203 }, sdr: { 'sdr.highlight_compression_start_percent': 55 } },
-  color: { changes: { '$lane.saturation': .3, '$lane.tint': 8 } },
+  highlight_compression: { changes: { '$lane.exposure': 3, '$lane.highlight_compression_mode': 'peak_fit',
+    '$lane.highlight_compression_peak_measurement': 'maximum' }, hdr: { 'hdr.highlight_compression_target_nits': 600,
+    'hdr.highlight_compression_start_nits': 200 }, sdr: { 'sdr.highlight_compression_start_percent': 55 } },
+  color: { changes: { '$lane.saturation': .45, '$lane.tint': .40, '$lane.white_balance_kelvin': 4500 } },
   wheels: { changes: { '$lane.color_grading.shadows.hue': 220, '$lane.color_grading.shadows.saturation': 28,
-    '$lane.color_grading.highlights.hue': 38, '$lane.color_grading.highlights.saturation': 18 } },
-  hsl: { channel: 'red', saturation: 48, hue_shift: 12 },
+    '$lane.color_grading.shadows.luminance_ev': .40, '$lane.color_grading.highlights.hue': 38,
+    '$lane.color_grading.highlights.saturation': 18, '$lane.color_grading.highlights.luminance_ev': .35 } },
+  hsl: { channel: 'red', ranges: [{ center: 110, width: 155, feather: 24, subtract: false }],
+    hue: 12, saturation: 48, luminance: .75 },
   bw: { changes: { '$lane.black_and_white_section_enabled': true, '$lane.black_and_white.reds': 40 } },
-  vignette: { changes: { '$lane.vignette.amount': -45, '$lane.vignette.midpoint': 30 } },
-  detail: { changes: { '$lane.detail.clarity_amount': 35, '$lane.detail.sharpen_amount': 45 } },
+  vignette: { changes: { '$lane.vignette.amount': -45, '$lane.vignette.midpoint': 30,
+    '$lane.vignette.midpoint_scale_version': 2 } },
+  detail: { changes: { '$lane.detail.texture_amount': 25, '$lane.detail.clarity_amount': 50,
+    '$lane.detail.clarity_radius_percent': .75, '$lane.detail.sharpen_amount': 50,
+    '$lane.detail.sharpen_radius_px': .8, '$lane.detail.sharpen_threshold': 0,
+    '$lane.detail.softness': 0, '$lane.detail.microcontrast': 0 } },
   film: { changes: { '$lane.film_look.film_stock': 'kodak_portra_400', '$lane.film_look.look_strength': 80,
-    '$lane.film_look.lens_filter': 'black_pro_mist', '$lane.film_look.lens_strength': .3,
-    '$lane.film_look.halation_enabled': true, '$lane.film_look.halation_amount': 25,
-    '$lane.film_look.grain_enabled': true, '$lane.film_look.grain_amount': 28 } },
-  local: { locals: [{ type: 'brush', exposure: .8 }, { type: 'linear_gradient', exposure: -.55 }] },
+    '$lane.film_look.lens_filter': 'black_pro_mist', '$lane.film_look.lens_strength': .3, '$lane.film_look.lens_size': 1,
+    '$lane.film_look.halation_enabled': true, '$lane.film_look.halation_amount': 25, '$lane.film_look.halation_radius': .20,
+    '$lane.film_look.grain_enabled': true, '$lane.film_look.grain_amount': 28, '$lane.film_look.film_resolution': 90,
+    '$lane.film_look.print_contrast': 20, '$lane.film_look.scan_sharpening': 25 } },
+  local: { stroke: { from: [.30, .40], to: [.70, .60], samples: 7, pressure: 1 },
+    locals: [{ type: 'brush', exposure: .8, saturation: .25,
+      brush: { brush_radius: .025, brush_hardness: .75, brush_flow: 1, brush_opacity: 1, brush_smoothing: .35 } },
+    { type: 'linear_gradient', exposure: -.55, saturation: -.20 }] },
   retouch: { repairs: [{ source: [.38, .44], destination: [.5, .5] },
-    { source: [.57, .5], destination: [.66, .56] }], size: 128 },
+    { source: [.57, .5], destination: [.66, .56] }], size: 128, feather: 25, texture: 100, opacity: 100 },
   geometry: { changes: { 'shared.geometry.crop': { x: .08, y: .08, width: .84, height: .84 },
-    'shared.geometry.straighten_angle': 2, 'shared.geometry.perspective_rotate': 4 } },
+    'shared.geometry.straighten_angle': 2, 'shared.geometry.perspective_horizontal': 12,
+    'shared.geometry.perspective_vertical': 0, 'shared.geometry.perspective_rotate': 0, 'shared.geometry.rotation': 0,
+    'shared.geometry.flip_horizontal': false, 'shared.geometry.flip_vertical': false } },
   sdr_match: { changes: { 'hdr.exposure': .35, 'hdr.contrast': .12, 'hdr.saturation': .12 }, action: 'whole' },
 };
 
@@ -66,11 +87,11 @@ const EYES = {
 };
 const RANGE = {
   tone: ['#$lane-exposure', '#$lane-contrast'], bands: ['#tone-equalizer-band-value'],
-  highlight_compression: ['#$lane-compression-start', '#$lane-compression-softness'],
-  color: ['#$lane-saturation', '#$lane-tint'], wheels: ['[data-path="current.color_grading.blending"]'],
+  highlight_compression: ['#$lane-compression-start', '#$lane-compression-detail'],
+  color: ['#$lane-saturation', '#$lane-tint'],
   hsl: ['#hsl-global-panel [data-hsl-key="saturation"]'], bw: ['#bw-reds'],
-  vignette: ['[data-path="current.vignette.amount"]'], detail: ['#detail-clarity', '#detail-sharpen'],
-  film: ['#film-look-strength', '#film-lens-strength', '#film-halation-amount', '#film-grain-amount'],
+  vignette: ['[data-path="current.vignette.amount"]'], detail: ['#detail-clarity', '#detail-sharpen', '#detail-clarity-radius'],
+  film: ['#film-print_contrast', '#film-look-strength', '#film-lens-strength', '#film-halation-amount', '#film-grain-amount'],
   local: ['[data-local-grade="exposure"]'],
 };
 
@@ -119,9 +140,9 @@ function options(args) {
   return { ...v, out: path.resolve(v.out), samples: +v.samples, warmups: +v.warmup, plan };
 }
 
-async function findPhoto(arg) {
-  const role = Object.hasOwn(PHOTOS, arg) ? arg : 'path';
-  const listed = role === 'path' ? null : PHOTOS[role];
+async function findPhoto(arg, override = null) {
+  const role = override ? 'override' : Object.hasOwn(PHOTOS, arg) ? arg : 'path';
+  const listed = override || PHOTOS[role] || null;
   if (!listed && /\.hdrf(?:-triage)?$/i.test(arg)) throw Error('Use a photo, not a project file.');
   const original = listed ? path.join(photosRoot(), 'HDR Test Images', listed) : path.resolve(arg);
   if (!listed) {
@@ -192,7 +213,38 @@ function sampler() {
 // This runs in the disposable renderer. A queue fence is paired with both
 // the accepted frame and its generation, so a superseded frame cannot win.
 function installObserve() {
-  const audit = window.__moduleAudit = { overlayNotBefore: 0, background: 0 };
+  const audit = window.__moduleAudit = { overlayNotBefore: 0, background: 0, rawPhases: [], denoiseEvents: [] };
+  const openStage = gradeOpenStage;
+  gradeOpenStage = function (stage, fields) {
+    if (stage === 'grade_open_backend_stage') audit.rawPhases.push({ generation: state.importGeneration, ...fields });
+    return openStage.apply(this, arguments);
+  };
+  const renderer = state.gpuPreview;
+  const recordStage = renderer.recordStage;
+  renderer.recordStage = function (stage, detail) {
+    if (['fine-grain-fit', 'fine-grain-reduced-miss'].includes(stage))
+      audit.denoiseEvents.push(stage);
+    if (stage === 'denoise-analysis' && ['started', 'ready'].includes(detail?.state))
+      audit.denoiseEvents.push(detail.state === 'started' ? 'selector-setup' : 'selector-miss');
+    return recordStage.apply(this, arguments);
+  };
+  const grainEvent = renderer.grainEvent;
+  renderer.grainEvent = function (event) {
+    if (event === 'grain_cpu_prepare_started') audit.denoiseEvents.push(event);
+    return grainEvent.apply(this, arguments);
+  };
+  audit.preparation = () => {
+    const lane = state.currentView, selector = renderer.denoiseSourceSelector;
+    const method = state.denoise[lane].controls.method;
+    const runtime = state.denoiseRuntime[lane];
+    const expected = `${state.session?.session_id}:${lane}:${refinementProxyLongEdge()}:${geometrySignature()}:${gradeSourceIdentity(lane)}`;
+    const ready = renderer.diagnosticsSnapshot().denoise?.cacheReady;
+    return { expected, identity: selector?.identity ?? null, method,
+      prepared: Boolean(!runtime?.dirty && ((ready && selector?.controls?.method === method)
+        || (method === 'micro_grain' && runtime?.microBackup))) };
+  };
+  audit.reduced = a => a?.transport !== 'WebGPU' && a?.reducedNotice && a.processedLongEdge > 0
+    && a.processedLongEdge < requiredProcessingLongEdge() ? a.reducedNotice : null;
   const debounce = debounceOverlayAndScopes;
   debounceOverlayAndScopes = function (...args) {
     audit.overlayNotBefore = performance.now() + 120;
@@ -212,8 +264,8 @@ function installObserve() {
     const lane = state.currentView, a = state.acceptedPresentation, c = state.renderCoordinator?.state(lane);
     const scheduler = state.previewScheduler;
     return !state.importInProgress && !state.gradeOpen && !state.rawRedevelopGeneration
-      && a?.exact && a.processedLongEdge === requiredProcessingLongEdge()
-      && scopePresentationMatches(a, lane) && viewerState().status === 'ready'
+      && (a?.exact && a.processedLongEdge === requiredProcessingLongEdge() && viewerState().status === 'ready' || audit.reduced(a))
+      && scopePresentationMatches(a, lane)
       && !state.gpuDraftInFlight && !state.globalEditSyncPending && !state.denoiseInputQueue?.running
       && !['preparing', 'recalculating'].includes(state.denoiseRuntime[lane]?.status) && !retouchUI.busy
       && !state.zoomRefinementTimer && !state.zoomRefinementInFlight
@@ -224,7 +276,8 @@ function installObserve() {
         && !state.pendingGpuScopeRequest && !state.scopeRequestInFlight && !state.pendingScopeRequest
         && !state.gpuPreview?.activeScopeCount && !state.gpuPreview?.activeRenderCount && !geometryUnderlayerTask
         && !pendingHighlightAnchors.size && !exactHighlightAnchorInflight.size
-        && !audit.background && performance.now() >= audit.overlayNotBefore));
+        && !audit.background && !hslUI.selectionWork && !hslUI.pendingSelection
+        && performance.now() >= audit.overlayNotBefore));
   };
   audit.allocator = () => window.HDRFinisherPerformance.gpuSnapshot()?.resources?.memory?.allocator?.usedBytes ?? null;
   audit.bump = record => {
@@ -325,13 +378,16 @@ async function reveal(page, selector) {
   return locator;
 }
 
-async function pointerDrag(page, locator) {
+async function pointerDrag(page, locator, target) {
   const box = await locator.boundingBox();
   if (!box) throw Error('Slider is not visible');
-  const fraction = await locator.evaluate(c => (Number(c.value) - Number(c.min)) / (Number(c.max) - Number(c.min)));
+  const [fraction, targetFraction] = await locator.evaluate((c, target) => {
+    const fractionOf = n => (Number(n) - Number(c.min)) / (Number(c.max) - Number(c.min));
+    return [fractionOf(c.value), target == null ? null : fractionOf(target)];
+  }, target);
   if (!Number.isFinite(fraction)) throw Error('Slider lacks a finite range');
   const start = Math.max(.02, Math.min(.98, fraction));
-  const end = start > .73 ? start - .18 : start + .18;
+  const end = targetFraction ?? (start > .73 ? start - .18 : start + .18);
   const x = box.x + box.width * start, y = box.y + box.height / 2;
   await page.mouse.move(x, y);
   await page.mouse.down();
@@ -394,7 +450,8 @@ function measureWith(page, memory) {
       await page.evaluate(d => {
         const r = __moduleAudit.step = { ...d, firstAt: null, releaseAt: null, frames: [], errors: [],
           importGeneration: state.importGeneration, allocator: __moduleAudit.allocator(),
-          analysis: state.gpuPreview.denoiseCounters.analysisCalls };
+          denoiseEventIndex: __moduleAudit.denoiseEvents.length,
+          rawPhaseIndex: __moduleAudit.rawPhases.length, preparationBefore: __moduleAudit.preparation() };
         r.timer = setInterval(() => __moduleAudit.bump(r), 200);
       }, descriptor);
       await bounded(action(locator), descriptor.step);
@@ -414,14 +471,26 @@ function measureWith(page, memory) {
           .sort((a, b) => a.completedAt - b.completedAt)[0];
         const fallbacks = new Set(r.frames.flatMap(f => f.accepted.fallbackReason ? [f.accepted.fallbackReason] : []));
         if (a.grainRoute?.fallback) fallbacks.add(String(a.grainRoute.fallback));
-        const route = a.transport === 'WebGPU' ? `gpu-${a.execution || 'unknown'}` : `cpu-${a.transport || 'unknown'}`;
+        const reduced = __moduleAudit.reduced(a);
+        if (reduced) fallbacks.add(reduced);
+        const grain = a.grainRoute;
+        if (grain?.route === 'cpu' && grain.reason) fallbacks.add(grain.reason);
+        const route = reduced ? 'cpu-reduced' : grain?.route === 'cpu' ? 'cpu-grain'
+          : a.transport === 'WebGPU' ? `gpu-${a.execution || 'unknown'}` : `cpu-${a.transport || 'unknown'}`;
+        const events = __moduleAudit.denoiseEvents.slice(r.denoiseEventIndex);
+        const countEvent = event => events.filter(name => name === event).length;
         return {
           first_feedback_ms: first ? first.completedAt - r.firstAt : null,
           settle_ms: Math.max(0, last.completedAt - r.releaseAt),
           drained_ms: Math.max(0, drainedAt - r.releaseAt),
           whole_wait_ms: last.completedAt - r.firstAt, route, fallbacks: [...fallbacks],
           processedLongEdge: a.processedLongEdge, allocator: r.allocator, errors: r.errors,
-          rebuilds: Math.max(0, state.gpuPreview.denoiseCounters.analysisCalls - r.analysis),
+          reduced: reduced ? { requestedLongEdge: requiredProcessingLongEdge(), actualLongEdge: a.processedLongEdge, reason: reduced } : null,
+          rawPhases: __moduleAudit.rawPhases.slice(r.rawPhaseIndex),
+          preparationBefore: r.preparationBefore, preparationAfter: __moduleAudit.preparation(),
+          denoisePreparation: { selectorSetups: countEvent('selector-setup'), selectorMisses: countEvent('selector-miss'),
+            fitMisses: countEvent('fine-grain-fit'), exactReducedMisses: countEvent('fine-grain-reduced-miss'),
+            cpuPreparationMisses: countEvent('grain_cpu_prepare_started') },
           ended: performance.timeOrigin + drainedAt,
         };
       }, drainedAt);
@@ -432,7 +501,8 @@ function measureWith(page, memory) {
         __moduleAudit.step = null;
       }).catch(() => {}), 'Stop renderer observation', 1500).catch(() => {});
     }
-    outcome.rebuilds += requests.filter(url => /analysis|prepare/i.test(url)).length;
+    outcome.denoisePreparation.cpuPreparationMisses = Math.max(outcome.denoisePreparation.cpuPreparationMisses,
+      requests.filter(url => /denoise-(?:grain|micro|prepare)(?:\/|$)/i.test(url)).length);
     outcome.errors.push(...memory.errors.slice(errorAt).filter(Boolean));
     if (!baseline) outcome.errors.push('No idle process memory sample');
     if (outcome.first_feedback_ms === null) {
@@ -452,12 +522,20 @@ function step(name, kind, state, reason = null) {
 }
 
 function addSample(target, sample) {
-  for (const key of TIMINGS) if (sample[key] !== null) target[key].samples.push(sample[key]);
+  if (sample.reduced) {
+    (target.reducedSamples ||= []).push({ ...sample.reduced, route: sample.route,
+      ...Object.fromEntries(TIMINGS.map(key => [key, sample[key]])), signature: sample.signature, memory_mb: sample.memory_mb });
+  } else {
+    for (const key of TIMINGS) if (sample[key] !== null) target[key].samples.push(sample[key]);
+    target.processedLongEdge = sample.processedLongEdge;
+  }
+  (target.samplesDetail ||= []).push({ route: sample.route, processedLongEdge: sample.processedLongEdge,
+    preparationBefore: sample.preparationBefore, preparationAfter: sample.preparationAfter,
+    denoisePreparation: sample.denoisePreparation, ...(sample.rawPhases.length ? { rawPhases: sample.rawPhases } : {}) });
   for (const key of MEMORY) {
     const n = sample.memory_mb[key];
     if (n !== null) target.memory_mb[key] = Math.max(target.memory_mb[key] ?? 0, n);
   }
-  target.processedLongEdge = sample.processedLongEdge;
   const routes = new Set([...(target.route?.split(' / ') ?? []), sample.route]);
   target.route = [...routes].join(' / ');
   target.signature = sample.signature;
@@ -500,6 +578,21 @@ async function prime(page) {
   await setDenoise(page, false);
 }
 
+async function seedDenoise(page, controls) {
+  await setDenoise(page, false);
+  await setDenoise(page, false, controls.method);
+  await bounded(page.evaluate(async controls => {
+    const lane = state.currentView;
+    Object.assign(state.denoise[lane].controls, controls);
+    invalidateDenoisePreparation(lane, { dirty: true });
+    if (!await persistDenoiseSettings()) throw Error('Denoise recipe was rejected.');
+    const accepted = state.editDocument.denoise[lane].controls;
+    if (!Object.entries(controls).every(([k, v]) => accepted[k] === v)) throw Error('Denoise recipe was not acknowledged.');
+    renderDenoiseControls();
+  }, controls), 'Seed Denoise recipe');
+  await stable(page);
+}
+
 async function setRaw(page, update, zoom) {
   const reloaded = await bounded(page.evaluate(async ({ key, values }) => {
     const source = sourcePathForClipboard();
@@ -507,13 +600,18 @@ async function setRaw(page, update, zoom) {
     const existing = state.editDocument.source.raw_import_settings;
     const rawImportSettings = key ? structuredClone(existing) : values;
     if (key) Object.assign(rawImportSettings[key], values);
-    if (stablePreviewJson(rawImportSettings) === stablePreviewJson(existing)) return false;
-    await openStagedDesktopSource({ ...await desktop.grantSourcePath(source), rawImportSettings, replaceSessionId: id });
-    if (state.importGeneration <= previous || !state.session?.session_id
-      || (key && !Object.entries(values).every(([k, v]) => state.editDocument.source.raw_import_settings[key]?.[k] === v))) {
-      throw Error(`RAW ${key || 'default'} settings did not persist`);
+    const changed = stablePreviewJson(rawImportSettings) !== stablePreviewJson(existing);
+    if (changed) {
+      await openStagedDesktopSource({ ...await desktop.grantSourcePath(source), rawImportSettings, replaceSessionId: id });
+      if (state.importGeneration <= previous || !state.session?.session_id
+        || (key && !Object.entries(values).every(([k, v]) => state.editDocument.source.raw_import_settings[key]?.[k] === v))) {
+        throw Error(`RAW ${key || 'default'} settings did not persist`);
+      }
     }
-    return true;
+    delete els.rawSettingsPanel.dataset.initialized;
+    delete els.rawHighlightGroup.dataset.sessionId;
+    renderRawImportControls(state.session);
+    return changed;
   }, update), 'Re-develop RAW for the next settled block');
   if (reloaded) await setZoom(page, zoom);
 }
@@ -591,49 +689,75 @@ async function seed(page, id, recipe, rendition, zoom) {
     await setModuleEye(page, id, rendition, true);
   }
   if (id === 'bands') {
-    await page.evaluate(({ rendition, band }) => {
-      const nodes = currentToneEqualizerNodes(rendition);
-      const middle = Math.floor(nodes.length / 2);
-      Object.assign(nodes[middle], band);
-      commitAdjustmentValue(`${rendition}.tone_equalizer_nodes`, nodes, { manual: true });
-    }, { rendition, band: recipe.band });
+    await applyChanges(page, rendition, {
+      '$lane.tone_equalizer_nodes': recipe.nodes.map(([input_ev, adjustment_ev]) => ({ input_ev, adjustment_ev })),
+      '$lane.tone_equalizer_smoothing': recipe.smoothing,
+    });
   } else if (id === 'hsl') {
-    await page.evaluate(({ channel, ...recipe }) => {
+    const { channel, ...values } = recipe;
+    const hsl = await page.evaluate(({ rendition, channel, values }) => {
+      const hsl = structuredClone(state.adjustments[rendition].hsl);
+      Object.assign(hsl.channels.find(c => c.id === channel).recipe, values);
+      return hsl;
+    }, { rendition, channel, values });
+    await applyChanges(page, rendition, { '$lane.hsl': hsl });
+    await page.evaluate(({ channel, values, rendition }) => {
       const ui = hslUI.panels[0];
       ui.channel = channel;
-      hslEdit(ui, () => Object.assign(hslChannel(ui).recipe, recipe));
-    }, recipe);
+      ui.range = 0;
+      hslSync(ui);
+      const accepted = state.editDocument.global_adjustments[rendition].hsl.channels.find(c => c.id === channel)?.recipe;
+      if (!Object.entries(values).every(([key, value]) => valuesEqual(accepted?.[key], value)))
+        throw Error('HSL recipe was not acknowledged.');
+    }, { rendition, channel, values });
   } else if (id === 'local') {
-    const { createLocalAdjustment } = require('../helpers/local-adjustments');
+    const { selectLocalDraft } = require('../helpers/local-adjustments');
+    await setZoom(page, 'fit');
     for (const local of recipe.locals) {
-      await createLocalAdjustment(page, local.type);
-      await page.evaluate(async ({ rendition, exposure }) => {
+      const id = await selectLocalDraft(page, local.type);
+      const { from, to, samples } = recipe.stroke;
+      const points = await page.evaluate(async ({ from, to, brush }) => {
+        if (brush) Object.assign(selectedMaskLeaf(), brush);
+        await ensureGeometryCoordinateMap();
+        const box = activePreviewElement().getBoundingClientRect();
+        return [from, to].map(([x, y]) => [box.x + x * box.width, box.y + y * box.height]);
+      }, { from, to, brush: local.brush });
+      await page.mouse.move(...points[0]);
+      await page.mouse.down();
+      try { await page.mouse.move(...points[1], { steps: samples - 1 }); }
+      finally { await page.mouse.up(); }
+      await page.waitForFunction(id => !state.localMaskCommitDepth
+        && state.editDocument.local_adjustments.some(local => local.id === id), id, { timeout: LIMIT });
+      await page.evaluate(async ({ rendition, exposure, saturation }) => {
         const local = structuredClone(selectedLocal());
-        local[`${rendition}_grade`].exposure = exposure;
+        Object.assign(local[`${rendition}_grade`], { exposure, saturation });
         if (!await queueEditCommand('update_local', { local }, local.id)) throw Error('Local grade setup was rejected');
-      }, { rendition, exposure: local.exposure });
+      }, { rendition, exposure: local.exposure, saturation: local.saturation });
       await stable(page);
     }
+    await setZoom(page, zoom);
   } else if (id === 'retouch') {
+    await setZoom(page, 'fit');
     await selectTab(page, 'retouch');
     for (const [i, spot] of recipe.repairs.entries()) {
       if (!await page.evaluate(() => retouchUI.active && retouchUI.mode === 'heal')) await page.locator('#retouch-mode-heal').click();
-      const points = await page.evaluate(async ({ spot, size }) => {
+      const points = await page.evaluate(async ({ spot, size, feather, texture, opacity }) => {
         await ensureGeometryCoordinateMap();
-        const control = document.querySelector('#retouch-size');
-        control.value = String(size);
-        control.dispatchEvent(new Event('input', { bubbles: true }));
-        const image = activePreviewElement().getBoundingClientRect(), viewer = els.dropzone.getBoundingClientRect();
-        const x = Math.max(image.left, viewer.left), y = Math.max(image.top, viewer.top);
-        const w = Math.min(image.right, viewer.right) - x, h = Math.min(image.bottom, viewer.bottom) - y;
-        return [spot.source, spot.destination].map(([fx, fy]) => [x + w * fx, y + h * fy]);
-      }, { spot, size: recipe.size });
+        for (const [key, value] of Object.entries({ size, feather, texture, opacity })) {
+          const control = retouchInput(key);
+          control.value = String(value);
+          control.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        const image = activePreviewElement().getBoundingClientRect();
+        return [spot.source, spot.destination].map(([fx, fy]) => [image.left + image.width * fx, image.top + image.height * fy]);
+      }, { ...recipe, spot });
       for (const point of points) await page.mouse.click(...point);
       await page.waitForFunction(count => state.editDocument.repairs.length > count && !retouchUI.busy, i, { timeout: LIMIT });
       await stable(page);
     }
-  } else if (id === 'sdr_match') {
-    await openMatch(page);
+    await setZoom(page, zoom);
+  } else if (id === 'vignette' && await page.locator('#vignette-show-overlay').getAttribute('aria-pressed') === 'true') {
+    await page.locator('#vignette-show-overlay').click();
   }
   await stable(page);
   return null;
@@ -671,17 +795,35 @@ async function moduleState(page, id, recipe, rendition, zoom, on, snapshots) {
   await stable(page);
 }
 
-async function canvasDrag(page, locator) {
-  const b = await locator.boundingBox();
-  if (!b) throw Error('Curve editor is not visible');
-  const point = await page.evaluate(() => {
-    const canvas = document.querySelector('#curve-editor');
-    const rect = canvas.getBoundingClientRect();
-    return { x: rect.left + rect.width * .50, y: rect.top + rect.height * .42 };
-  });
-  await page.mouse.move(point.x, point.y);
+async function canvasDrag(page, locator, gesture) {
+  const [x, y, dx, dy] = await locator.evaluate((control, gesture) => {
+    const rect = control.getBoundingClientRect();
+    if (gesture === 'curve') {
+      const point = curvePointCanvasPosition([.5, .58]);
+      const { width, height } = canvasLogicalSize(control);
+      return [rect.left + point.x * rect.width / width, rect.top + point.y * rect.height / height, 0, -rect.height * .16];
+    }
+    if (gesture === 'wheel') {
+      const puck = control.querySelector('.color-wheel-puck').getBoundingClientRect();
+      return [puck.left + puck.width / 2, puck.top + puck.height / 2, 12, -8];
+    }
+    if (gesture === 'hsl-range') {
+      const handle = control.querySelector('g[data-hsl-handle="move"][data-range="0"] circle').getBoundingClientRect();
+      const x = handle.left + handle.width / 2, y = handle.top + handle.height / 2;
+      const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+      const angle = Math.atan2(y - cy, x - cx) + Math.PI / 12, radius = Math.hypot(x - cx, y - cy);
+      return [x, y, cx + Math.cos(angle) * radius - x, cy + Math.sin(angle) * radius - y];
+    }
+    throw Error(`Unknown canvas gesture: ${gesture}`);
+  }, gesture);
+  await page.mouse.move(x, y);
   await page.mouse.down();
-  try { await page.mouse.move(point.x, point.y - b.height * .16, { steps: 8 }); }
+  try {
+    for (let i = 1; i <= 9; i++) {
+      await page.mouse.move(x + dx * i / 9, y + dy * i / 9);
+      await delay(20);
+    }
+  }
   finally { await page.mouse.up(); }
 }
 
@@ -689,10 +831,10 @@ const TIMINGS = [...CLOCKS, 'whole_wait_ms'];
 const slider = selector => ({ selector, name: selector.replace(/^#/, ''), type: 'range' });
 const button = (selector, name) => ({ selector, name, type: 'click' });
 
-async function ownControls(page, id, rendition) {
+async function ownControls(page, id, rendition, zoom) {
   if (id === 'baseline' || id === 'denoise') return [];
   if (id === 'curves') return [
-    { selector: '#curve-editor', name: 'curve.drag', type: 'canvas' },
+    { selector: '#curve-editor', name: 'luma.drag', type: 'canvas', gesture: 'curve' },
     button(eye(EYES[id]), 'eye'),
   ];
   if (id === 'geometry') return [{ ...slider('#crop-straighten'), name: 'straighten.drag', geometry: true, draft: true }];
@@ -701,15 +843,30 @@ async function ownControls(page, id, rendition) {
     { ...slider('#retouch-size'), tab: 'retouch', repair: true },
     { ...button('#retouch-list button[aria-label^="Hide "]', 'eye'), tab: 'retouch' },
   ];
-  if (id === 'raw.cleanup') return [{ ...slider('#raw-speck-threshold'), raw: true, disclosure: true }];
-  if (id === 'raw.lens') return [{ ...button('#lens-distortion', 'distortion.click'), raw: true, disclosure: true, applyRaw: true }];
+  if (id === 'raw.cleanup') return [
+    { ...slider('#raw-speck-threshold'), raw: true, disclosure: true },
+    { ...button('#raw-even-out-specks', 'specks.click'), raw: true, disclosure: true },
+    { ...button('#raw-remove-hot-pixels', 'hot-pixels.click'), raw: true, disclosure: true },
+  ];
+  if (id === 'raw.lens') return [
+    { ...button('#lens-distortion', 'distortion.click'), raw: true, disclosure: true, applyRaw: true },
+    { ...button('#apply-raw-settings', 'mode-off.apply'), raw: true, disclosure: true, prepLensOff: true },
+  ];
   if (id === 'raw.highlights') return [
     { ...slider('#raw-highlight-threshold'), raw: true },
     { ...button('#raw-highlight-bypass', 'eye'), raw: true },
   ];
-  const selectors = (RANGE[id] || []).map(s => renameLane(s, rendition))
+  const selectors = [...(RANGE[id] || []), ...(id === 'film' && zoom === '100' ? ['#film-scan_sharpening'] : [])]
+    .map(s => renameLane(s, rendition))
     .map(s => id === 'bands' && rendition === 'sdr' ? '#sdr-tone-equalizer-band-value' : s);
-  return [...selectors.map(s => ({ ...slider(s), tab: id === 'local' ? 'local' : 'global' })),
+  const wheel = '[data-wheel="shadows"] .color-wheel-pad';
+  const extra = id === 'hsl' ? [{ selector: '#hsl-global-panel .hsl-wheel', name: 'range-with-selection.drag',
+    type: 'canvas', gesture: 'hsl-range' }] : id === 'wheels' ? [
+    await page.locator(wheel).count() ? { selector: wheel, name: 'shadows-puck.drag', type: 'canvas', gesture: 'wheel' }
+      : { ...slider('[data-path="current.color_grading.blending"]'), name: 'blending-fallback.drag' },
+  ] : [];
+  return [...selectors.map(s => ({ ...slider(s), tab: id === 'local' ? 'local' : 'global',
+    selectBand: id === 'bands', target: s === '#hdr-compression-start' ? 300 : null })), ...extra,
     ...(EYES[id] ? [{ ...button(eye(renameLane(EYES[id], rendition)), 'eye'), tab: id === 'local' ? 'local' : 'global' }] : [])];
 }
 
@@ -718,8 +875,24 @@ async function performControl(page, measure, row, descriptor) {
   if (descriptor.disclosure && await page.locator('#raw-settings-toggle').getAttribute('aria-expanded') !== 'true') {
     await page.locator('#raw-settings-toggle').click();
   }
+  if (descriptor.prepLensOff) await page.locator('#lens-mode').selectOption('off');
   if (descriptor.geometry && await page.locator('#rotate-tool-toggle').getAttribute('aria-pressed') !== 'true') {
     await page.locator('#rotate-tool-toggle').click();
+  }
+  if (descriptor.selectBand) await page.evaluate(() => {
+    state.selectedToneEqualizerBand = 2;
+    syncToneEqualizerControls();
+    drawToneEqualizerEditor();
+  });
+  if (descriptor.gesture === 'curve') {
+    const channel = '[data-curve-channel="luma"]';
+    await (await reveal(page, channel)).click();
+  }
+  if (descriptor.gesture === 'wheel') await (await reveal(page, '#wheel-tab-shadows')).click();
+  const showSelection = '#hsl-global-panel [data-hsl-selection]';
+  if (descriptor.gesture === 'hsl-range') {
+    await (await reveal(page, showSelection)).click();
+    await page.waitForFunction(() => document.querySelector('#hsl-selection-overlay')?.complete, null, { timeout: LIMIT });
   }
   if (descriptor.repair) {
     await page.evaluate(() => {
@@ -727,15 +900,18 @@ async function performControl(page, measure, row, descriptor) {
       if (repair) selectRetouchRepair(repair.id);
     });
   }
-  return measure({ ...descriptor, step: row.step }, async locator => {
-    if (descriptor.type === 'canvas') await canvasDrag(page, locator);
-    else if (descriptor.type === 'range') await pointerDrag(page, locator);
+  try { return await measure({ ...descriptor, step: row.step }, async locator => {
+    if (descriptor.type === 'canvas') await canvasDrag(page, locator, descriptor.gesture);
+    else if (descriptor.type === 'range') await pointerDrag(page, locator, descriptor.target);
     else if (descriptor.selector === '#sdr-match-entire') await openMatch(page);
     else await locator.click();
     if (descriptor.applyRaw) await page.locator('#apply-raw-settings').click();
     if (descriptor.geometry) await page.locator('#rotate-apply').click();
     if (descriptor.repair) await page.locator('#retouch-apply').click();
-  });
+  }); } finally {
+    if (descriptor.gesture === 'hsl-range' && await page.locator(showSelection).getAttribute('aria-pressed') === 'true')
+      await page.locator(showSelection).click();
+  }
 }
 
 function timedStep(row, name, kind, state, skipped = null) {
@@ -746,12 +922,63 @@ function timedStep(row, name, kind, state, skipped = null) {
 
 async function denoiseUnavailable(page, method) {
   if (method !== 'micro_grain') return null;
-  return page.evaluate(() => {
-    const raw = state.editDocument?.source?.raw_import_settings?.highlight_reconstruction;
-    if (raw?.enabled && raw.method === 'edge_colour_v1') return 'Micro Grain is unavailable with Highlight Reconstruction Edge colour.';
-    if (state.editDocument?.repairs?.some(repair => repair.enabled)) return 'Micro Grain is unavailable with Retouch repairs.';
-    return null;
-  });
+  return page.evaluate(() => microGrainUnavailable(state.currentView) || null);
+}
+
+async function highlightPeakNits(page) {
+  // Read the same finished float pixels used by delivery, before display
+  // headroom or compositor encoding can clip the bypassed peak.
+  return bounded(page.evaluate(async () => {
+    const gpu = state.gpuPreview, session = state.session, lane = state.currentView;
+    const edge = requiredProcessingLongEdge(), source = session.source, white = projectReferenceWhiteNits();
+    const P = HDRGpuParamLayout.indices, identity = gradeSourceIdentity(lane);
+    const adjustments = structuredClone(state.adjustments);
+    const proxy = await gpu.loadProxy(session.session_id, lane, edge, geometrySignature(), state.editRevision, identity);
+    if (!proxy) throw Error('Highlight peak check could not load the Grade source.');
+    const texture = (format, usage) => gpu.device.createTexture({ size: [proxy.width, proxy.height], format, usage });
+    const film = texture('rgba16float', GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING);
+    let finished, buffer;
+    try {
+      const delivery = { texture: film };
+      const result = await gpu.renderTo(document.createElement('canvas'), session.session_id, lane, adjustments, sampleCurvePoints,
+        edge, [], state.editRevision, null, white, source, { identity, delivery, measureOnly: true });
+      if (!delivery.params || !(result?.rendered || result?.execution === 'direct')) throw Error('Highlight peak check could not capture the Grade.');
+      const params = new Float32Array(delivery.params);
+      params[P.TILE_VALID_WIDTH] = params[P.FRAME_WIDTH] = proxy.width;
+      params[P.TILE_VALID_HEIGHT] = params[P.FRAME_HEIGHT] = proxy.height;
+      params[P.TILE_ORIGIN_X] = params[P.TILE_ORIGIN_Y] = 0;
+      const reduce = await gpu.ensurePeakReductionPipeline('finishedPeakReductionMain');
+      const peak = (pixels, label) => gpu.runPeakReduction(reduce, pixels, proxy.width, proxy.height,
+        params, 'maximum', `audit:${session.session_id}:${state.editRevision}:${label}`);
+      if (!adjustments.hdr.highlight_section_enabled) {
+        params[P.HIGHLIGHT_COLOR_HANDLING] = 2; // BT.2020 channel maximum, not luminance
+        return await peak(film, 'bypass') * white / .18;
+      }
+      params[P.HIGHLIGHT_ANCHOR] = await peak(film, 'anchor');
+      finished = texture('rgba32float', GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING);
+      buffer = gpu.createStorageBuffer(params);
+      gpu.device.queue.writeBuffer(buffer, 0, params);
+      const pipeline = await gpu.device.createRenderPipelineAsync({ layout: gpu.pipelineLayout,
+        vertex: { module: gpu.module, entryPoint: 'vertexMain' },
+        fragment: { module: gpu.module, entryPoint: 'outputPictureFragmentMain', targets: [{ format: 'rgba32float' }] },
+        primitive: { topology: 'triangle-list' } });
+      const view = film.createView();
+      const group = gpu.bindGraphResources(view, view, { buffer }, view);
+      const encoder = gpu.device.createCommandEncoder();
+      const pass = encoder.beginRenderPass({ colorAttachments: [{ view: finished.createView(), loadOp: 'clear', storeOp: 'store' }] });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, group);
+      pass.draw(3);
+      pass.end();
+      gpu.device.queue.submit([encoder.finish()]);
+      params[P.HIGHLIGHT_COLOR_HANDLING] = 2;
+      return await peak(finished, 'finished') * white / .18;
+    } finally {
+      film.destroy();
+      finished?.destroy();
+      buffer?.destroy();
+    }
+  }), 'Check Highlight Compression BT.2020 peak');
 }
 
 async function auditModule(page, measure, row, cfg, defaults) {
@@ -770,7 +997,8 @@ async function auditModule(page, measure, row, cfg, defaults) {
     }
     if (!warm) {
       addSample(target, measured);
-      if (descriptor.denoise) row.denoiseRebuilds += measured.rebuilds;
+      const { selectorMisses, fitMisses, exactReducedMisses, cpuPreparationMisses } = measured.denoisePreparation;
+      if (selectorMisses || fitMisses || exactReducedMisses || cpuPreparationMisses) row.denoiseRebuilds++;
     }
     return measured;
   };
@@ -778,10 +1006,44 @@ async function auditModule(page, measure, row, cfg, defaults) {
     await selectTab(page);
     await stable(page);
     row[target] = await signature(page, true);
+    if (id === 'highlight_compression' && rendition === 'hdr') {
+      const state = target === 'onSignature' ? 'on' : 'off';
+      const peak = (row.highlightPeakNits ||= {})[state] = await highlightPeakNits(page);
+      const cap = recipe.hdr['hdr.highlight_compression_target_nits'];
+      if (!Number.isFinite(peak) || (state === 'on' ? peak > cap : peak <= cap))
+        throw Error(`Highlight Compression ${state}: BT.2020 channel peak ${peak} nits did not ${state === 'on' ? 'stay within' : 'exceed'} ${cap} nits.`);
+    }
+  };
+  const coldEnable = async (name, state, reason = null) => {
+    const previous = row.steps.find(s => s.step === name && s.state === state);
+    if (previous) { await setDenoise(page, true); return; }
+    if (!reason && (await page.evaluate(() => __moduleAudit.preparation())).prepared) reason = 'Preparation already resident before enable.';
+    const target = timedStep(row, name, 'cold', state, reason);
+    if (!reason) await sample(target, denoiseEye);
+    else if (reason === 'Preparation already resident before enable.') await setDenoise(page, true);
+  };
+  const assertState = async on => {
+    const evidence = await page.evaluate(({ id, rendition, on }) => {
+      if (state.currentView !== rendition) throw Error(`Expected ${rendition} lane after changing ${id}, got ${state.currentView}`);
+      if (id === 'bw' && on && !state.editDocument.global_adjustments[rendition].black_and_white.reds)
+        throw Error('B&W ON probe did not retain the authored Reds mix.');
+      if (!id.startsWith('raw.')) return null;
+      const extra = state.session.metadata.extra;
+      return { phases: __moduleAudit.rawPhases.filter(p => p.generation === state.importGeneration),
+        lane: state.currentView, lens: extra.lens_correction ?? null, highlight: extra.raw_development?.highlight_reconstruction ?? null,
+        preparation: __moduleAudit.preparation() };
+    }, { id, rendition, on });
+    if (evidence) (row.rawStates ||= {})[on ? 'on' : 'off'] = evidence;
+  };
+  const coldThenPrime = async on => {
+    await assertState(on);
+    await setDenoise(page, false, 'clean_grain');
+    await coldEnable('cold.denoise.toggle_on', on ? 'on' : 'off');
+    await setDenoise(page, false);
   };
   const changeState = async on => {
-    await moduleState(page, id, recipe, rendition, zoom, on, { defaults, seeded });
-    if (id !== 'denoise') await prime(page);
+    await moduleState(page, id, recipe, rendition, zoom, on, { defaults: bypassed, seeded });
+    if (id !== 'denoise') await coldThenPrime(on);
     else {
       await prime(page);
       await setDenoise(page, on, 'clean_grain');
@@ -795,49 +1057,60 @@ async function auditModule(page, measure, row, cfg, defaults) {
     row.errors.push(skipped);
     return;
   }
+  const bypassed = id === 'sdr_match' ? await gradeSnapshot(page) : defaults;
+  if (id === 'sdr_match') await openMatch(page);
+  if (id === 'retouch') row.microGrainSkipped = await denoiseUnavailable(page, 'micro_grain');
   const seeded = await gradeSnapshot(page);
-  if (id !== 'denoise') await prime(page);
 
   if (id === 'denoise') {
-    for (const method of METHODS) {
+    row.methods = {};
+    for (const [method, controls] of Object.entries(recipe.methods)) {
       const reason = await denoiseUnavailable(page, method);
-      const cold = timedStep(row, `cold.denoise.${method}.toggle_on`, 'cold', 'on', reason);
-      const eyeStep = timedStep(row, `own.denoise.${method}.eye`, 'own', 'on', reason);
+      const evidence = row.methods[method] = { recipeHash: recipeHash(controls), skipped: reason };
+      const warmOn = timedStep(row, `own.denoise.${method}.toggle_on`, 'own', 'on', reason);
+      const warmOff = timedStep(row, `own.denoise.${method}.toggle_off`, 'own', 'on', reason);
       const dial = slider(method === 'micro_grain' ? '#denoise-micro-luminance' : '#denoise-amount');
       const range = timedStep(row, `own.denoise.${method}.amount.drag`, 'own', 'on', reason);
-      if (reason) continue;
-      await setDenoise(page, false, method);
-      await sample(cold, { ...denoiseEye, denoise: true });
+      if (reason) { await coldEnable(`cold.denoise.${method}.toggle_on`, 'on', reason); continue; }
+      await restoreGrade(page, defaults, rendition, zoom);
+      await seedDenoise(page, controls);
+      await selectTab(page);
+      evidence.offSignature = await signature(page, true);
+      await coldEnable(`cold.denoise.${method}.toggle_on`, 'on');
+      evidence.onSignature = await signature(page, true);
+      evidence.pixelsChanged = evidence.onSignature !== evidence.offSignature;
+      evidence.flags = evidence.pixelsChanged ? [] : ['no_op'];
+      if (method === 'clean_grain') {
+        row.onSignature = evidence.onSignature;
+        row.offSignature = evidence.offSignature;
+      }
+      await setDenoise(page, false);
       for (let i = -warmups; i < count; i++) {
-        if (i !== -warmups) {
-          await setDenoise(page, false);
-          await page.evaluate(() => resetControlGroup('denoise'));
-          await stable(page);
-        }
-        await setDenoise(page, true, method);
-        await sample(range, { ...dial, denoise: true }, i < 0);
-        await sample(eyeStep, { ...denoiseEye, denoise: true }, i < 0);
+        await sample(warmOn, denoiseEye, i < 0);
+        await sample(warmOff, denoiseEye, i < 0);
+      }
+      for (let i = -warmups; i < count; i++) {
+        await setDenoise(page, true);
+        await sample(range, dial, i < 0);
+        await seedDenoise(page, controls);
       }
     }
-    await setDenoise(page, false);
-    await page.evaluate(() => resetControlGroup('denoise'));
-    await stable(page);
+    await restoreGrade(page, defaults, rendition, zoom);
+    await seedDenoise(page, recipe.methods.clean_grain);
   } else {
-    for (const d of await ownControls(page, id, rendition)) {
+    for (const d of await ownControls(page, id, rendition, zoom)) {
       const label = d.type === 'range' && !d.name.endsWith('.drag') ? d.name + '.drag' : d.name;
       const target = timedStep(row, `own.${id}.${label}`, 'own', 'on');
       for (let i = -warmups; i < count; i++) {
-        if (id === 'sdr_match') {
-          await restoreGrade(page, defaults, rendition, zoom);
-          await applyChanges(page, rendition, recipe.changes);
-        }
+        if (id === 'sdr_match') await restoreGrade(page, bypassed, rendition, zoom);
         await sample(target, d, i < 0);
         await restoreGrade(page, seeded, rendition, zoom);
       }
     }
   }
 
-  if (id !== 'baseline') {
+  if (id === 'baseline') await coldThenPrime(true);
+  else if (id !== 'denoise') {
     await changeState(true);
     await check('onSignature');
     // RAW is measured as two blocks. Defer the OFF signature until the
@@ -887,7 +1160,8 @@ async function auditModule(page, measure, row, cfg, defaults) {
       }
     }
   }
-  row.pixelsChanged = id !== 'baseline' && row.onSignature !== row.offSignature;
+  row.pixelsChanged = id === 'denoise' ? Object.values(row.methods).every(m => m.skipped || m.pixelsChanged)
+    : id !== 'baseline' && row.onSignature !== row.offSignature;
   row.status = 'complete';
 }
 
@@ -926,6 +1200,11 @@ async function runMetadata(page, cfg, photo, file) {
     noise: { baseline_start: {}, baseline_middle: {}, baseline_end: {}, spread_pct: 0 } };
 }
 
+async function photoEvidence(page, { role, file, sha256 }) {
+  const megapixels = await page.evaluate(() => state.session.source.width * state.session.source.height / 1e6);
+  return { role, file, sha256, megapixels };
+}
+
 function saveBaseline(run, row, phase) {
   const key = 'baseline_' + phase;
   run.noise[key] = {};
@@ -945,9 +1224,51 @@ async function audit() {
   const token = photo.role === 'path' ? photo.file.replace(/[^\w.-]/g, '_') + '-' + photo.sha256.slice(0, 12) : photo.role;
   fs.mkdirSync(cfg.out, { recursive: true });
   const file = path.join(cfg.out, `module-impact-${token}-${cfg.zoom}.json`);
-  const cursor = Number(process.env.HDR_FINISHER_MODULE_AUDIT_CURSOR || '0');
-  const old = (cfg.resume || cursor) && fs.existsSync(file)
+  const continuation = process.env.HDR_FINISHER_MODULE_AUDIT_CURSOR;
+  const cursor = Number(continuation || '0');
+  const old = (cfg.resume || continuation !== undefined) && fs.existsSync(file)
     ? validateRun(JSON.parse(fs.readFileSync(file, 'utf8')), file) : null;
+  const selectedPhotos = new Map();
+  for (const item of cfg.plan) {
+    const id = item.split(':')[0];
+    const override = cfg.zoom === 'fit' && ['typical', 'large'].includes(photo.role) && RAW_PHOTOS[id];
+    if (override) selectedPhotos.set(id, await findPhoto(cfg.photo, override));
+  }
+  const isComplete = (run, item) => {
+    if (!run) return false;
+    const [id, phase] = item.split(':');
+    return phase ? Boolean(Object.keys(run.noise['baseline_' + phase]).length)
+      : run.modules.some(row => row.module === id && row.status === 'complete');
+  };
+  const power = process.env.HDR_FINISHER_POWER_MODE || 'unknown';
+  if (old && (old.driver.sha256 !== await shaFile(__filename) || old.photo.sha256 !== photo.sha256
+    || old.zoom !== cfg.zoom || old.samples !== cfg.samples || old.warmups !== cfg.warmups
+    || old.machine.platform !== process.platform || old.machine.name !== os.hostname()
+    || old.machine.powerMode !== power
+    || (process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE && old.machine.window !== process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE)
+    || old.modules.some(row => cfg.plan.some(item => item.split(':')[0] === row.module)
+      && (row.lane !== moduleLane(row.module, cfg.lane)
+        || (row.photo ?? old.photo).sha256 !== (selectedPhotos.get(row.module) || photo).sha256)))) {
+    throw Error('Cannot resume: driver, input, lane or measurement conditions changed. Use a fresh --out folder.');
+  }
+  const first = cfg.plan.findIndex((item, i) => i >= cursor && !isComplete(old, item));
+  let failed = process.env.HDR_FINISHER_MODULE_AUDIT_FAILED === '1';
+  if (first < 0) {
+    console.log('[module audit] All requested modules already complete; nothing to run.');
+    if (failed) process.exitCode = 1;
+    return null;
+  }
+  const restart = (index, preserveFailedProfile = false) => {
+    if (preserveFailedProfile) process.exitCode = 1;
+    return async () => {
+      const env = { ...process.env, HDR_FINISHER_MODULE_AUDIT_CURSOR: String(index),
+        HDR_FINISHER_MODULE_AUDIT_FAILED: failed ? '1' : '0' };
+      delete env.HDR_FINISHER_ELECTRON_TEST_USER_DATA;
+      const child = spawn(process.execPath, ['tests/run-in-electron.js', DRIVE, ...process.argv.slice(2)], { stdio: 'inherit', env });
+      const [code] = await once(child, 'exit');
+      process.exitCode = code || (failed ? 1 : 0);
+    };
+  };
   const { chromium } = require('playwright');
   const browser = await chromium.launch({ headless: false });
   const page = await browser.newPage();
@@ -957,22 +1278,24 @@ async function audit() {
     await page.waitForFunction(() => window.HDRFinisherPerformance?.gpuSnapshot()?.available, null, { timeout: LIMIT });
     await page.evaluate(() => window.HDRFinisherPerformance.enableGpuInstrumentation(true));
     await page.evaluate(installObserve);
-    await openPhoto(page, photo, moduleLane(cfg.plan[0].split(':')[0], cfg.lane), cfg.zoom);
+    const firstId = cfg.plan[first].split(':')[0];
+    const selected = selectedPhotos.get(firstId) || photo;
+    const source = old ? selected : photo;
+    await openPhoto(page, source, moduleLane(firstId, cfg.lane), cfg.zoom);
     const defaults = await gradeSnapshot(page);
-    const fresh = await runMetadata(page, cfg, photo, file);
+    const fresh = await runMetadata(page, cfg, source, file);
     const changedConditions = old ? Object.keys(fresh.machine).filter(k => old.machine[k] !== fresh.machine[k]) : [];
-    if (old && (old.driver.sha256 !== fresh.driver.sha256 || old.photo.sha256 !== fresh.photo.sha256
-      || old.zoom !== fresh.zoom || old.samples !== fresh.samples || old.warmups !== fresh.warmups
-      || old.previewResolution !== fresh.previewResolution || old.appMemoryCeilingMb !== fresh.appMemoryCeilingMb
-      || changedConditions.length
-      || old.modules.some(row => cfg.plan.some(item => item.split(':')[0] === row.module)
-        && row.lane !== moduleLane(row.module, cfg.lane)))) {
+    if (old && (old.previewResolution !== fresh.previewResolution || old.appMemoryCeilingMb !== fresh.appMemoryCeilingMb
+      || changedConditions.length)) {
       throw Error(`Cannot resume: driver, input, lane or measurement conditions changed${changedConditions.length ? ' (' + changedConditions.join(', ') + ')' : ''}. Use a fresh --out folder.`);
     }
     const run = old || fresh;
+    if (source.input !== selected.input) {
+      saveFile(file, validateRun(run, file));
+      return restart(first);
+    }
     const start = Date.now(), priorDuration = run.durationSec;
     const measure = measureWith(page, memory);
-    let failed = Boolean(cursor && process.env.HDR_FINISHER_MODULE_AUDIT_FAILED);
     const persist = () => {
       run.durationSec = priorDuration + (Date.now() - start) / 1000;
       for (const row of run.modules) {
@@ -980,12 +1303,14 @@ async function audit() {
       }
       saveFile(file, validateRun(run, file));
     };
-    for (let index = cursor; index < cfg.plan.length; index++) {
+    for (let index = first; index < cfg.plan.length; index++) {
       const [id, phase] = cfg.plan[index].split(':');
-      if (old && (phase ? Object.keys(run.noise['baseline_' + phase]).length
-        : run.modules.some(row => row.module === id && row.status === 'complete'))) continue;
+      if (isComplete(old, cfg.plan[index])) continue;
+      if ((selectedPhotos.get(id) || photo).input !== source.input) return restart(index);
       const row = newModule(id, moduleLane(id, cfg.lane));
-      console.log(`[module audit] ${cfg.plan[index]} (${row.lane})`);
+      row.photo = await photoEvidence(page, source);
+      const moduleStart = performance.now();
+      console.log(`[module audit] ${cfg.plan[index]} (${row.lane}, ${row.photo.file})`);
       let interrupted = false;
       try { await auditModule(page, measure, row, cfg, defaults); }
       catch (error) {
@@ -1001,6 +1326,7 @@ async function audit() {
         row.status = 'error';
         failed = interrupted = true;
       }
+      row.durationSec = (performance.now() - moduleStart) / 1000;
       if (!phase || phase === 'start' || !run.modules.some(item => item.module === id)) {
         run.modules = [...run.modules.filter(item => item.module !== id), row];
       } else if (row.errors.length) {
@@ -1008,17 +1334,9 @@ async function audit() {
       }
       if (phase) saveBaseline(run, row, phase);
       persist();
-      console.log(`[module audit] ${row.status}, ${row.steps.length} steps → ${file}`);
+      console.log(`[module audit] ${row.status}, ${row.steps.length} steps, ${row.durationSec.toFixed(1)} s → ${file}`);
       if (interrupted && index + 1 < cfg.plan.length) {
-        process.exitCode = 1; // preserve this failed Electron profile and logs
-        return async () => {
-          const env = { ...process.env, HDR_FINISHER_MODULE_AUDIT_CURSOR: String(index + 1),
-            HDR_FINISHER_MODULE_AUDIT_FAILED: '1' };
-          delete env.HDR_FINISHER_ELECTRON_TEST_USER_DATA;
-          const child = spawn(process.execPath, ['tests/run-in-electron.js', DRIVE, ...process.argv.slice(2)], { stdio: 'inherit', env });
-          const [code] = await once(child, 'exit');
-          process.exitCode = code || 1;
-        };
+        return restart(index + 1, true);
       }
     }
     if (failed) process.exitCode = 1;
