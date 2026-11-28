@@ -68,3 +68,42 @@ test('cancelled CPU work cannot mark a replacement GPU scope fresh', async () =>
   assert.equal(cleared, false);
   assert.equal(state.scopeRequestInFlight, null);
 });
+
+test('a detached CPU scope cannot dispatch work queued behind its replacement', async () => {
+  const state = { activeWorkflow: 'grade', session: { session_id: 'old' }, currentView: 'hdr',
+    scopeGeneration: 1, scopeMode: 'histogram' };
+  const fetches = [];
+  const ctx = vm.createContext({ state, AbortController, document: { hidden: false },
+    markScopeUpdating() {}, restoreScopeFreshnessIfIdle() {}, els: { scopeNote: {} },
+    geometryDraftActive: () => false, scopePresentationMatches: () => true,
+    scopeWaitingForWholePicture: () => false, scopeDisplayPeakNits: () => 1000,
+    fetch: (url, { signal, body }) => new Promise((resolve, reject) => {
+      fetches.push({ signal, resolve, reject, generation: JSON.parse(body).generation });
+    }),
+  });
+  vm.runInContext(declarations('enqueueScopeRequest', 'runScopeRequest'), ctx);
+  const request = (sessionId, generation) => new Promise(resolve => ctx.enqueueScopeRequest({
+    sessionId, lane: 'hdr', mode: 'histogram', generation, resolution: { bins: 256, columns: 256 }, resolve,
+  }));
+  const old = request('old', 1);
+  // Source replacement aborts and detaches the old work before launching the
+  // new source. Abort does not settle the old request synchronously.
+  state.scopeRequestInFlight.controller.abort();
+  state.scopeRequestInFlight = null;
+  state.session = { session_id: 'new' };
+  state.scopeGeneration = 2;
+  const replacement = request('new', 2);
+  state.scopeGeneration = 3;
+  const newest = request('new', 3);
+  fetches[0].reject(fetches[0].signal.reason);
+  assert.equal(await old, false);
+  assert.deepEqual(fetches.map(x => x.generation), [1, 2]);
+  assert.equal(state.scopeRequestInFlight.generation, 2);
+
+  fetches[1].reject(fetches[1].signal.reason);
+  assert.equal(await replacement, false);
+  assert.deepEqual(fetches.map(x => x.generation), [1, 2, 3]);
+  fetches[2].resolve({ ok: false, status: 503 });
+  assert.equal(await newest, false);
+  assert.equal(state.scopeRequestInFlight, null);
+});

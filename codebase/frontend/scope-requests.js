@@ -554,15 +554,19 @@ async function runScopeRequest(request) {
     if (!signal.aborted && error.name !== "AbortError") console.error(error);
     return false;
   } finally {
-    if (state.scopeRequestInFlight === request) state.scopeRequestInFlight = null;
     request.resolve(applied);
-    const next = state.pendingScopeRequest;
-    state.pendingScopeRequest = null;
-    if (next) {
-      void runScopeRequest(next);
-    } else if (!applied) {
-      restoreScopeFreshnessIfIdle();
-      if (isCurrent() && scopeWaitingForWholePicture(request.lane)) refreshScopesAfterPresentation(request.lane);
+    // A source reset can detach this request before its fetch unwinds.
+    // Only the current owner can advance the single-flight queue.
+    if (state.scopeRequestInFlight === request) {
+      state.scopeRequestInFlight = null;
+      const next = state.pendingScopeRequest;
+      state.pendingScopeRequest = null;
+      if (next) {
+        void runScopeRequest(next);
+      } else if (!applied) {
+        restoreScopeFreshnessIfIdle();
+        if (isCurrent() && scopeWaitingForWholePicture(request.lane)) refreshScopesAfterPresentation(request.lane);
+      }
     }
   }
 }
