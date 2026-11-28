@@ -264,6 +264,7 @@
       }
       complete = true;
       await releaseStaging(renderer, stagingRing, retiredStaging);
+      options.beforePublish?.();
       const byteSize = width * height * bytesPerPixel;
       const proxy = {
         texture,
@@ -473,17 +474,25 @@
   }) {
     const key = panStoreKey(sessionId, lane, longEdge, geometrySignature, sourceIdentity);
     if (renderer.proxies.has(key)) return renderer.proxies.get(key);
-    if (renderer.proxyInflight.has(key)) return renderer.proxyInflight.get(key);
-    const pending = loadStreaming(renderer, {
-      sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key, options,
-    });
-    renderer.proxyInflight.set(key, pending);
+    const signal = options.signal || renderer.sourceAbortSignal();
+    const active = renderer.proxyInflight.get(key);
+    if (active && !active.signal.aborted) return active.pending;
+    const generation = renderer.resourceGeneration;
+    const isCurrent = () => !signal.aborted && generation === renderer.resourceGeneration
+      && options.isCurrent?.() !== false;
+    const flight = { signal, pending: loadStreaming(renderer, {
+      sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key,
+      options: { ...options, signal, isCurrent, beforePublish: () => {
+        if (!isCurrent()) throw supersededError("Pan store upload was superseded");
+      } },
+    }) };
+    renderer.proxyInflight.set(key, flight);
     try {
-      const proxy = await pending;
+      const proxy = await flight.pending;
       if (proxy) proxy.panStore = true;
       return proxy;
     } finally {
-      renderer.proxyInflight.delete(key);
+      if (renderer.proxyInflight.get(key) === flight) renderer.proxyInflight.delete(key);
     }
   }
 

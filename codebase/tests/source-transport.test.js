@@ -144,6 +144,62 @@ test("a cancellable scope source flight does not own the foreground fetch", asyn
   assert.equal(requests[1].aborted, false);
 });
 
+test("a cancelled pan store upload cannot claim or clear its replacement", async () => {
+  const uploads = [];
+  let transport;
+  const Preview = loadPreview((_url, { signal }) => new Promise((resolve, reject) => {
+    uploads.push({ signal, resolve, reject });
+  }), { setup: context => { transport = context.window.HDRSourceTransport; } });
+  const renderer = new Preview(null);
+  renderer.device = createDevice().device;
+  const backend = createBackend({ width: 64, height: 4 });
+  const request = (signal) => transport.loadPanStore(renderer, {
+    sessionId: "session", lane: "hdr", longEdge: 256, geometrySignature: "{}", editRevision: 1,
+    options: { signal },
+  });
+  const old = new AbortController();
+  const replacement = new AbortController();
+  const cancelled = assert.rejects(request(old.signal), { name: "AbortError" });
+  old.abort();
+  const current = request(replacement.signal);
+  current.catch(() => {});
+  uploads[0].reject(old.signal.reason);
+  await cancelled;
+  assert.equal(uploads.length, 2);
+  assert.equal(uploads[1].signal, replacement.signal);
+
+  const joined = request(replacement.signal);
+  assert.equal(uploads.length, 2);
+  uploads[1].resolve(await backend.fetchImpl("/api/session/session/proxy-stream/hdr"));
+  const [proxy, sameProxy] = await Promise.all([current, joined]);
+  assert.equal(proxy.panStore, true);
+  assert.equal(sameProxy, proxy);
+  assert.equal(renderer.proxyInflight.size, 0);
+});
+
+test("an old pan store cannot publish over a new photo's source during the copy fence", async () => {
+  const backend = createBackend({ width: 64, height: 4 });
+  let transport;
+  const Preview = loadPreview(backend.fetchImpl, { setup: context => { transport = context.window.HDRSourceTransport; } });
+  const renderer = new Preview(null);
+  const old = createDevice();
+  renderer.device = old.device;
+  const fenceStarted = Promise.withResolvers();
+  const fence = Promise.withResolvers();
+  old.device.queue.onSubmittedWorkDone = () => { fenceStarted.resolve(); return fence.promise; };
+  const pending = transport.loadPanStore(renderer, {
+    sessionId: "session", lane: "hdr", longEdge: 256, geometrySignature: "{}", editRevision: 1,
+  });
+  const refused = assert.rejects(pending, /Pan store upload was superseded/);
+  await fenceStarted.promise;
+  renderer.resetSession("replacement");
+  fence.resolve();
+  await refused;
+  assert.equal(renderer.proxies.size, 0);
+  assert.ok(old.textures.every(texture => texture.destroyed));
+  assert.ok(old.buffers.every(buffer => buffer.destroyed));
+});
+
 test("whole-source 507 backs off without blocking a first region or caching a 409", async () => {
   let status = 507;
   let time = 1;
