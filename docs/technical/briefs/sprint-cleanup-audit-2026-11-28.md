@@ -175,8 +175,8 @@ non-output-changing ones (an O package) and the runner re-audits.
 | --- | --- | --- | --- |
 | M1 | RAW development (`raw.cleanup`), Lens correction (`raw.lens`, needs a manifest photo with an exact Lensfun profile), Highlight Reconstruction (`raw.highlights`, needs a photo with clipped channels, e.g. `IMG_3129.CR2` or `DSC00264.ARW`) | active (review) | |
 | M2 | Denoise (`denoise`: `clean_grain`, `standard` "Simple", `micro_grain` "Micro Grain · Experimental"); noisy photo `IMG_0790.CR2` as well | review done | 12 findings; bugs for Steve M2-2/M2-3 (stale GPU Micro/Clean Grain tiles at 100% after settings change), M2-10 (Micro Grain stuck on CPU after crop undo); top perf M2-4..M2-7; driver needs per-method ON/OFF + warm re-enable |
-| M3 | Tone (`tone`), Exposure Bands (`bands`), Curves (`curves`), Highlight Compression (`highlight_compression`, recipe must push peaks over the target, e.g. Exposure +3) | active (review) | |
-| M4 | Color sliders (`color`), Color wheels (`wheels`), HSL (`hsl`), Black & White (`bw`), Vignette (`vignette`) | todo | |
+| M3 | Tone (`tone`), Exposure Bands (`bands`), Curves (`curves`), Highlight Compression (`highlight_compression`, recipe must push peaks over the target, e.g. Exposure +3) | review done | 14 findings; M3-8 needs Steve (tiled sharpening bands stale after curve move), M3-13 peak cache bypasses 32-entry limit, M3-14 needs Steve (CPU/GPU signed sub-target colour); driver must time HC Start not hidden Softness; recipes supplied |
+| M4 | Color sliders (`color`), Color wheels (`wheels`), HSL (`hsl`), Black & White (`bw`), Vignette (`vignette`) | active (review) | |
 | M5 | Detail (`detail`), Film Look (`film`, including Lens Filter, halation, grain) | todo | |
 | M6 | Local (`local`: one brush, one gradient), Retouch (`retouch`: two heals), Geometry (`geometry`: crop + rotate + perspective, `offMethod: neutral`), SDR Match (`sdr_match`, **SDR lane**, non-default HDR grade seeded first, matched versus restored). Photo Framing is out of scope (viewer finishing, not a Grade pixel stage); review only | todo | |
 
