@@ -876,8 +876,9 @@ async function performControl(page, measure, row, descriptor) {
     await page.locator('#raw-settings-toggle').click();
   }
   if (descriptor.prepLensOff) await page.locator('#lens-mode').selectOption('off');
-  if (descriptor.geometry && await page.locator('#rotate-tool-toggle').getAttribute('aria-pressed') !== 'true') {
-    await page.locator('#rotate-tool-toggle').click();
+  if (descriptor.geometry) {
+    const rotate = await reveal(page, '#rotate-tool-toggle');
+    if (await rotate.getAttribute('aria-pressed') !== 'true') await rotate.click();
   }
   if (descriptor.selectBand) await page.evaluate(() => {
     state.selectedToneEqualizerBand = 2;
