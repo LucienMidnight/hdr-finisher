@@ -63,3 +63,25 @@ test('local-buffer writers cannot hide a missing global grading writer',()=>{
  const changed=sources.map(s=>s.replace(/params\[GPU_PARAMS\.COLOR_GRADING_ENABLED\](\s*=(?!=))/g,'params[GPU_PARAMS.OVERLAY_ENABLED]$1'));
  assert.ok(audit(changed).errors.includes('COLOR_GRADING_ENABLED is read but never written'));
 });
+
+test('packed Color matrix stays exact across unrelated edits and follows changed primaries',()=>{
+ const vm=require('node:vm');
+ const {HDRGpuPassLayouts}=require('../frontend/gpu-param-layout.js');
+ const context=vm.createContext({HDRGpuParamLayout:layout,HDRGpuPassLayouts,HDRWebGPUShaders:shaders,
+  HDRHSL:require('../frontend/hsl-engine.js'),HDRTone:require('../frontend/tone-engine.js'),
+  HDRLensFilters:require('../frontend/lens-filters.js')});
+ context.window=context;
+ for(const name of ['gpu-render-plan.js','gpu-params.js'])vm.runInContext(read(name),context);
+ const branch={tint_purity:19,tint_hue:45,red_hue:-5,blue_purity:8};
+ const start=layout.indices.PRIMARIES_MATRIX_00;
+ const pack=()=>Array.from(context.buildParams('hdr',{hdr:branch,shared:{}},'acescg',false).slice(start,start+9));
+ const initial=pack();
+ assert.deepEqual([initial[0],initial[2],initial[4],initial[8]],
+  [1.1208137273788452,-.02066849172115326,1.0004334449768066,.6565257906913757]);
+ Object.assign(branch,{saturation:20,tint:10,exposure:.5,contrast:.2});
+ assert.deepEqual(pack(),initial);
+ branch.tint_hue=-5;
+ assert.notDeepEqual(pack(),initial);
+ branch.tint_hue=45;
+ assert.deepEqual(pack(),initial);
+});

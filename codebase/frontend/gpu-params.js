@@ -83,15 +83,28 @@
     return [ACESCG_WHITE[0] + direction[0] * distance * purityScale, ACESCG_WHITE[1] + direction[1] * distance * purityScale];
   }
 
+  const PRIMARY_MATRIX_INPUTS = ["red_hue", "red_purity", "green_hue", "green_purity",
+    "blue_hue", "blue_purity", "tint_hue", "tint_purity"];
+  let lastPrimariesMatrix;
+
   function rgbPrimariesAdjustmentMatrix(branch) {
+    const inputs = PRIMARY_MATRIX_INPUTS.map(key => Number(branch?.[key]) || 0);
+    if (lastPrimariesMatrix && floatArraysEqual(inputs, lastPrimariesMatrix.inputs)) {
+      return lastPrimariesMatrix.matrix;
+    }
+    const matrix = computePrimariesAdjustmentMatrix(inputs);
+    lastPrimariesMatrix = { inputs, matrix };
+    return matrix;
+  }
+
+  function computePrimariesAdjustmentMatrix(inputs) {
     const customPrimaries = ACESCG_PRIMARIES.map((primary, index) => {
-      const channel = ["red", "green", "blue"][index];
-      const hue = Number(branch?.[`${channel}_hue`]) || 0;
-      const purity = Math.max(0.01, 1 + (Number(branch?.[`${channel}_purity`]) || 0) / 100);
+      const hue = inputs[index * 2];
+      const purity = Math.max(0.01, 1 + inputs[index * 2 + 1] / 100);
       return rotateScalePrimary(primary, hue, purity);
     });
-    const tintHue = Number(branch?.tint_hue) || 0;
-    const tintPurity = Math.min(0.99, Math.max(0, (Number(branch?.tint_purity) || 0) / 100));
+    const tintHue = inputs[6];
+    const tintPurity = Math.min(0.99, Math.max(0, inputs[7] / 100));
     const customWhite = rotateScalePrimary(ACESCG_PRIMARIES[0], tintHue, tintPurity);
     const base = rgbToXyzMatrix(ACESCG_PRIMARIES, ACESCG_WHITE);
     const custom = rgbToXyzMatrix(customPrimaries, customWhite);
