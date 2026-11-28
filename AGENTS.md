@@ -1694,6 +1694,12 @@ Completed UI polish round 5 (pending visual sign-off):
 
 
 
+- `codebase/tools/README.md`: index of historical prototypes and manual
+
+  diagnostics, including the three distinct Library JPEG probes.
+
+
+
 - `codebase/tools/denoise_eval/README.md`: CPU-only Denoise quality harness,
 
   adapters, sensor calibration, fixed display transforms and metric definitions.
