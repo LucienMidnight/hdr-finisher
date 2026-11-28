@@ -1272,6 +1272,10 @@ menu wording, size label and Library toolbar; workflow tab font only).
   `findings-v1` and `module-impact-v1` formats, how to re-run and compare.
   One folder per run (`<date>-mac`, `<date>-pc`).
 
+- `docs/technical/research/film-speed-2026-11-28/`: Film Look speed research
+  (Sol measured pass costs, Neon design survey, Mist PSF scripts) behind the
+  approved fast Film plan.
+
 - `docs/technical/briefs/shared-curves-2026-11-27.md`: shared HDR and SDR
   curve math, editing, Match and parity qualification.
 

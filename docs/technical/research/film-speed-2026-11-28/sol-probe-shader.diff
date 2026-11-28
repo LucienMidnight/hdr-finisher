@@ -1,0 +1,41 @@
+diff --git a/codebase/frontend/webgpu-shaders.js b/codebase/frontend/webgpu-shaders.js
+index 74ca39d6..4e2f0ec8 100644
+--- a/codebase/frontend/webgpu-shaders.js
++++ b/codebase/frontend/webgpu-shaders.js
+@@ -2303,6 +2303,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
+     // multiples of four, so a tile's grid lines up with the frame's at every
+     // scale.
+     fn spatialScale() -> f32 {
++      if (p[14] >= 2.0) { return p[14] - 10.0 * floor(p[14] / 10.0); }
+       let longEdge = max(frameDimensions().x, frameDimensions().y);
+       return select(select(1.0, 2.0, longEdge >= 2048.0), 4.0, longEdge >= 4096.0);
+     }
+@@ -2553,7 +2554,28 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
+         let amount = 0.18 * p[${GPU_PARAMS.GRAIN_AMOUNT}] * master * response * pixelCoverage;
+         return grain * amount;
+     }
++    // Throwaway perf representative. Not a calibrated replacement.
++    fn solFastGrain(rgb: vec3f, coordinate: vec2i, master: f32) -> vec3f {
++      if (p[${GPU_PARAMS.GRAIN_ENABLED}] < 0.5 || p[${GPU_PARAMS.GRAIN_AMOUNT}] <= 0.0) { return vec3f(0.0); }
++      let pitch = filmPixelsPerMm(frameDimensions()) * (6.0 + 24.0 * p[${GPU_PARAMS.GRAIN_SIZE}]) / 1000.0;
++      let frame = vec2f(frameCoordinate(coordinate));
++      let softness = p[${GPU_PARAMS.GRAIN_SOFTNESS}];
++      let u = frame / max(pitch * (1.0 + softness), 1.0);
++      let signal = clamp(filmSignalFromLuma(max(filmLuma(rgb), 0.0)), 0.0, 1.0);
++      let mono = grainMottle(u, grainSeed(211u));
++      let tint = grainMottle(u / 1.4, grainSeed(227u));
++      let chroma = p[${GPU_PARAMS.GRAIN_CHROMA}] * (1.0 - smoothRange(0.8, 1.0, signal));
++      let useChroma = select(chroma, 0.0, p[${GPU_PARAMS.GRAIN_FILM_TYPE}] > 0.5);
++      let shadow = (1.0-signal)*(1.0-signal);
++      let highlight = signal*signal;
++      let response = shadow*p[${GPU_PARAMS.GRAIN_SHADOW_RESPONSE}]
++        + (1.0-shadow-highlight)*p[${GPU_PARAMS.GRAIN_MIDTONE_RESPONSE}]
++        + highlight*p[${GPU_PARAMS.GRAIN_HIGHLIGHT_RESPONSE}];
++      return (vec3f(mono) + useChroma*tint*vec3f(0.4,-0.15,0.8))
++        * (0.10*p[${GPU_PARAMS.GRAIN_AMOUNT}]*master*response*min(1.0,pitch));
++    }
+     fn filmGrainStops(rgb: vec3f, coordinate: vec2i, master: f32) -> vec3f {
++      if (p[14] >= 10.0) { return solFastGrain(rgb, coordinate, master); }
+       let scale = clamp(p[${GPU_PARAMS.SOURCE_PIXEL_SCALE}], 0.05, 1.0);
+       if (scale >= 1.0) { return filmGrainSample(rgb, coordinate, master, vec2f(0.0), 1.0); }
+       let count = min(4u, u32(ceil(1.0 / scale)));
