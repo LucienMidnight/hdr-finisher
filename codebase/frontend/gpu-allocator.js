@@ -21,6 +21,7 @@ class HDRGpuAllocator {
     // Insertion order is LRU order: a touch moves the entry to the end.
     this.entries = new Map();
     this.reservations = new Map();
+    this.pendingRetireBytes = 0;
     this.nextId = 1;
     this.evictions = 0;
     this.evictedBytes = 0;
@@ -107,8 +108,18 @@ class HDRGpuAllocator {
     return true;
   }
 
+  // Already-allocated bytes detached from a cache, but still held by an
+  // encoder or the queue. Charging them must not trigger recursive eviction.
+  deferRetirement(bytes) {
+    this.pendingRetireBytes += bytes;
+    return () => {
+      this.pendingRetireBytes -= bytes;
+      this.overBudgetBytes = Math.max(0, this.usedBytes() - this.budgetBytes);
+    };
+  }
+
   usedBytes() {
-    let bytes = 0;
+    let bytes = this.pendingRetireBytes;
     for (const entry of this.entries.values()) bytes += entry.bytes;
     for (const reservation of this.reservations.values()) bytes += reservation.bytes;
     return bytes;
@@ -123,7 +134,8 @@ class HDRGpuAllocator {
     let freedBytes = 0;
     let evictions = 0;
     for (const entry of [...this.entries.values()]) {
-      if (this.usedBytes() + incoming <= this.budgetBytes) break;
+      // Do not evict extra warm entries to replace bytes already retiring.
+      if (this.usedBytes() - this.pendingRetireBytes + incoming <= this.budgetBytes) break;
       if (entry.pins > 0 || entry.id === protect) continue;
       this.entries.delete(entry.id);
       try {
@@ -162,7 +174,8 @@ class HDRGpuAllocator {
       budgetBytes: this.budgetBytes,
       registeredBytes,
       reservedBytes,
-      usedBytes: registeredBytes + reservedBytes,
+      pendingRetireBytes: this.pendingRetireBytes,
+      usedBytes: registeredBytes + reservedBytes + this.pendingRetireBytes,
       entries: this.entries.size,
       byKind,
       reservations,

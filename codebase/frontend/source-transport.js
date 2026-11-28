@@ -98,41 +98,62 @@
     });
   }
 
-  /** Copy one row chunk through a reusable mapped staging-buffer slot. */
-  async function copyChunkStaged(renderer, ring, retired, slot, data, {
+  /**
+   * Copy one row chunk through a reusable mapped staging-buffer slot. Mapping
+   * waits only for that slot's previous copy, so we need one queue drain per
+   * transfer, not per chunk. Direct writes would accumulate an image-sized
+   * Dawn upload before the render submits.
+   */
+  async function copyChunkStaged(device, assertCurrent, ring, retired, slot, data, {
     bytesPerRow, rows, width, texture, origin, stagingCapacity = 0,
   }) {
+    assertCurrent("Source chunk was superseded before upload");
     const capacity = Math.max(stagingCapacity, bytesPerRow * rows);
     let staging = ring[slot];
     if (!staging || staging.size < capacity) {
-      if (staging) retired.push(staging);
-      staging = renderer.device.createBuffer({
+      const next = device.createBuffer({
         size: capacity,
         usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_WRITE,
       });
+      if (staging) retired.push(staging);
+      staging = next;
       ring[slot] = staging;
     }
     await staging.mapAsync(GPUMapMode.WRITE);
-    new Uint8Array(staging.getMappedRange()).set(new Uint8Array(data));
-    staging.unmap();
-    const encoder = renderer.device.createCommandEncoder();
+    try {
+      assertCurrent("Source chunk was superseded while mapping");
+      new Uint8Array(staging.getMappedRange()).set(new Uint8Array(data));
+    } finally {
+      staging.unmap();
+    }
+    const encoder = device.createCommandEncoder();
     encoder.copyBufferToTexture(
       { buffer: staging, offset: 0, bytesPerRow, rowsPerImage: rows },
       { texture, origin },
       { width, height: rows },
     );
-    renderer.device.queue.submit([encoder.finish()]);
+    device.queue.submit([encoder.finish()]);
     return staging;
   }
 
   /** Release a staging ring after all of its submitted copies have executed. */
-  async function releaseStaging(renderer, ring, retired = []) {
+  async function releaseStaging(device, ring, retired = []) {
     const buffers = [...ring, ...retired].filter(Boolean);
     ring.length = 0;
     retired.length = 0;
     if (!buffers.length) return;
-    await renderer.device.queue.onSubmittedWorkDone().catch(() => null);
-    for (const buffer of buffers) buffer.destroy();
+    try {
+      await device.queue.onSubmittedWorkDone();
+    } catch {
+      // A lost device can reject its own fence.
+    } finally {
+      for (const buffer of buffers) buffer.destroy();
+    }
+  }
+
+  function transferIsCurrent(renderer, device, signal, requested) {
+    return () => renderer.device === device && !renderer.deviceLost && !signal?.aborted
+      && (typeof requested !== "function" || requested() !== false);
   }
 
   function setMode(renderer, mode) {
@@ -155,8 +176,9 @@
   }) {
     const startedAt = performance.now();
     const endpoint = options.endpoint === "single" ? "proxy" : "proxy-stream";
+    const device = renderer.device;
     const signal = options.signal || renderer.sourceAbortSignal();
-    const isCurrent = typeof options.isCurrent === "function" ? options.isCurrent : null;
+    const isCurrent = transferIsCurrent(renderer, device, signal, options.isCurrent);
     const assertCurrent = (message) => {
       if (isCurrent && isCurrent() === false) throw supersededError(message);
     };
@@ -197,7 +219,7 @@
       assertCurrent("Source stream was superseded before upload");
       const bytesPerPixel = pixelFormat === "rgba16float" ? 8 : 16;
       try {
-        texture = renderer.device.createTexture({
+        texture = device.createTexture({
           size: { width, height },
           format: pixelFormat,
           usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
@@ -224,7 +246,7 @@
           throw error;
         }
         const rows = pendingBytes / bytesPerRow;
-        await copyChunkStaged(renderer, stagingRing, retiredStaging, chunkCount % ringSize,
+        await copyChunkStaged(device, assertCurrent, stagingRing, retiredStaging, chunkCount % ringSize,
           pending.subarray(0, pendingBytes), {
             bytesPerRow, rows, width, texture, origin: { x: 0, y: chunkCount * rowsPerChunk },
           });
@@ -263,8 +285,9 @@
         throw error;
       }
       complete = true;
-      await releaseStaging(renderer, stagingRing, retiredStaging);
+      await releaseStaging(device, stagingRing, retiredStaging);
       options.beforePublish?.();
+      assertCurrent("Source stream was superseded before publication");
       const byteSize = width * height * bytesPerPixel;
       const proxy = {
         texture,
@@ -320,14 +343,16 @@
       renderer.destroyAfterActiveRenders(() => texture?.destroy?.());
       throw error;
     } finally {
-      if (!complete) {
-        if (reader && typeof reader.cancel === "function") {
-          await reader.cancel().catch(() => null);
-        } else if (typeof response.body?.cancel === "function") {
-          await response.body.cancel().catch(() => null);
+      try {
+        if (!complete) {
+          if (reader && typeof reader.cancel === "function") await reader.cancel();
+          else if (typeof response.body?.cancel === "function") await response.body.cancel();
         }
+      } catch {
+        // Keep the transfer error if cancellation of the old response fails.
+      } finally {
+        await releaseStaging(device, stagingRing, retiredStaging);
       }
-      await releaseStaging(renderer, stagingRing, retiredStaging);
     }
   }
 
@@ -336,8 +361,9 @@
     sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key, options = {},
   }) {
     const startedAt = performance.now();
+    const device = renderer.device;
     const signal = options.signal || renderer.sourceAbortSignal();
-    const isCurrent = typeof options.isCurrent === "function" ? options.isCurrent : null;
+    const isCurrent = transferIsCurrent(renderer, device, signal, options.isCurrent);
     const assertCurrent = (message) => {
       if (isCurrent && isCurrent() === false) throw supersededError(message);
     };
@@ -369,7 +395,7 @@
     const bytesPerPixel = pixelFormat === "rgba16float" ? 8 : 16;
     let texture;
     try {
-      texture = renderer.device.createTexture({
+      texture = device.createTexture({
         size: { width, height },
         format: pixelFormat,
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
@@ -399,17 +425,19 @@
         if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
         transferredBytes += data.byteLength;
         chunkCount += 1;
-        await copyChunkStaged(renderer, stagingRing, retiredStaging,
+        await copyChunkStaged(device, assertCurrent, stagingRing, retiredStaging,
           chunkCount % ringSize, data, {
             bytesPerRow, rows, width, texture, origin: { x: 0, y: top },
           });
         assertCurrent("Source tile stream was superseded");
       }
+      await releaseStaging(device, stagingRing, retiredStaging);
+      assertCurrent("Source tile stream was superseded before publication");
     } catch (error) {
       renderer.destroyAfterActiveRenders(() => texture.destroy());
       throw error;
     } finally {
-      await releaseStaging(renderer, stagingRing, retiredStaging);
+      await releaseStaging(device, stagingRing, retiredStaging);
     }
 
     const byteSize = width * height * bytesPerPixel;
@@ -501,8 +529,10 @@
     sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key, region, options = {},
   }) {
     const startedAt = performance.now();
+    const strip = options.stripUpload;
+    const device = strip?.device || renderer.device;
     const signal = options.signal || renderer.sourceAbortSignal();
-    const isCurrent = typeof options.isCurrent === "function" ? options.isCurrent : null;
+    const isCurrent = transferIsCurrent(renderer, device, signal, options.isCurrent);
     const assertCurrent = (message) => {
       if (isCurrent && isCurrent() === false) throw supersededError(message);
     };
@@ -512,7 +542,6 @@
       + `&x=${rect.x}&y=${rect.y}&width=${rect.width}&height=${rect.height}&halo=0`
       + (epoch === undefined ? "" : `&source_epoch=${epoch}`);
 
-    const strip = options.stripUpload;
     let metadata = strip?.metadata;
     if (!metadata) {
       const probe = await fetch(query({ x: region.x, y: region.y, width: 1, height: 1 }), { signal, headers: options.headers });
@@ -579,7 +608,7 @@
     }
 
     const bytesPerPixel = pixelFormat === "rgba16float" ? 8 : 16;
-    const limits = renderer.device.limits;
+    const limits = device.limits;
     const textureWidth = strip ? Math.min(strip.maxWidth, outputWidth) : delivered.width;
     const textureHeight = strip ? Math.min(strip.maxRows, outputHeight) : delivered.height;
     const refuseRegion = (message, details) => {
@@ -614,7 +643,7 @@
     const chunkTotal = rowChunks * Math.ceil(missing.width / chunkWidth);
     let texture = strip?.texture;
     try {
-      texture ||= renderer.device.createTexture({
+      texture ||= device.createTexture({
         label: strip ? "grain-source-strip" : undefined,
         size: { width: textureWidth, height: textureHeight },
         format: pixelFormat,
@@ -680,7 +709,7 @@
           if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
           transferredBytes += data.byteLength;
           chunkCount += 1;
-          await copyChunkStaged(renderer, stagingRing, retiredStaging, slot, data, {
+          await copyChunkStaged(device, assertCurrent, stagingRing, retiredStaging, slot, data, {
             bytesPerRow, rows: chunk.height, width: chunk.width, texture, stagingCapacity: strip?.chunkBytes,
             origin: { x: chunk.x - delivered.x, y: chunk.y - delivered.y },
           });
@@ -688,22 +717,22 @@
         }
       };
       if (store) {
-        const encoder = renderer.device.createCommandEncoder();
+        const encoder = device.createCommandEncoder();
         encoder.copyTextureToTexture(
           { texture: store.texture, origin: { x: delivered.x, y: delivered.y } },
           { texture },
           { width: delivered.width, height: delivered.height },
         );
-        renderer.device.queue.submit([encoder.finish()]);
+        device.queue.submit([encoder.finish()]);
       } else if (overlap) {
         const { previous, x, width } = overlap;
-        const encoder = renderer.device.createCommandEncoder();
+        const encoder = device.createCommandEncoder();
         encoder.copyTextureToTexture(
           { texture: previous.texture, origin: { x: x - previous.region.x, y: delivered.y - previous.region.y } },
           { texture, origin: { x: x - delivered.x, y: 0 } },
           { width, height: delivered.height },
         );
-        renderer.device.queue.submit([encoder.finish()]);
+        device.queue.submit([encoder.finish()]);
       }
       // Every lane stops before the partial texture is released: a copy into
       // a destroyed texture must not be left in flight.
@@ -711,11 +740,13 @@
         failure ||= error;
       })));
       if (failure) throw failure;
+      if (!strip) await releaseStaging(device, stagingRing, retiredStaging);
+      assertCurrent("ROI source region was superseded before publication");
     } catch (error) {
       if (!strip) renderer.destroyAfterActiveRenders(() => texture.destroy());
       throw error;
     } finally {
-      if (!strip) await releaseStaging(renderer, stagingRing, retiredStaging);
+      if (!strip) await releaseStaging(device, stagingRing, retiredStaging);
     }
 
     const byteSize = delivered.width * delivered.height * bytesPerPixel;
@@ -760,6 +791,7 @@
     isCurrent,
     startedAt,
   }) {
+    const device = renderer.device;
     const response = await fetch(
       `/api/session/${sessionId}/proxy/${lane}?long_edge=${Math.max(256, longEdge)}&format=rgba16f&edit_revision=${editRevision}`
         + `&geometry_signature=${encodeURIComponent(geometrySignature)}`
@@ -778,13 +810,13 @@
     if (acceptedGeometry !== geometrySignature) {
       throw supersededError("Stale WebGPU geometry proxy rejected");
     }
-    if (signal?.aborted || (isCurrent && isCurrent() === false)) throw supersededError("Source proxy was superseded");
-    const texture = renderer.device.createTexture({
+    if (!transferIsCurrent(renderer, device, signal, isCurrent)()) throw supersededError("Source proxy was superseded");
+    const texture = device.createTexture({
       size: { width, height },
       format: pixelFormat,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
     });
-    renderer.device.queue.writeTexture(
+    device.queue.writeTexture(
       { texture },
       data,
       { offset: 0, bytesPerRow, rowsPerImage: height },
@@ -1085,7 +1117,6 @@
     clearCapacityRefusals,
     readChunk,
     SOURCE_TILE_REQUEST_EDGE,
-    copyChunkStaged,
     releaseStaging,
     setMode,
     loadStreaming,

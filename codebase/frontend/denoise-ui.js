@@ -743,7 +743,7 @@ async function commitDenoiseControl(key, value) {
   if (key === "method") {
     runtime.microBackup = null;
     runtime.showOriginal = !settings.enabled;
-    state.gpuPreview?.cancelDenoiseProcessing?.({ selectOriginal: false });
+    state.gpuPreview?.cancelDenoiseProcessing?.({ selectOriginal: false, replaceMethod: true });
   }
   if (key.startsWith("micro_") && runtime.microBackup && settings.enabled) {
     invalidateDenoisePreparation(lane);

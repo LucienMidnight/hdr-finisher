@@ -206,6 +206,7 @@ fn feathered(xy: vec2i, axis: vec2i) -> vec4f {
     constructor(device, { onAllocate = null } = {}) {
       this.device = device; this.onAllocate = onAllocate;
       this.textures = {}; this.retired = []; this.capacity = null; this.preparedKey = null; this.selectedKey = null; this.serial = 0;
+      this.retiredTextureBytes = 0;
     }
     async initialize() {
       const module = this.device.createShaderModule({ label: "HSL selection", code: shader });
@@ -229,6 +230,7 @@ fn feathered(xy: vec2i, axis: vec2i) -> vec4f {
         layers: Math.max(layers, cap?.layers || 0), cw: Math.max(cw, cap?.cw || 0), ch: Math.max(ch, cap?.ch || 0) };
       // Commands already encoded but not yet submitted may still use the old
       // textures, so they are retired, not destroyed, until dropRetired().
+      this.retiredTextureBytes += this.bytes();
       this.retired.push(...Object.values(this.textures)); this.textures = {}; this.capacity = null; this.invalidate();
       const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST;
       const created = [];
@@ -250,10 +252,12 @@ fn feathered(xy: vec2i, axis: vec2i) -> vec4f {
         };
       } catch (error) {
         for (const texture of created) texture.destroy();
+        this.onMemoryChange?.(this.retiredTextureBytes);
         throw error;
       }
       this.capacity = next; this.preparedKey = null; this.selectedKey = null;
       this.onAllocate?.(next.width * next.height * (64 + 16 * next.layers) + next.cw * next.ch * 48, next);
+      this.onMemoryChange?.(this.bytes() + this.retiredTextureBytes);
     }
     fieldsView() { return this.textures.fields.createView(); }
     outputView() { return this.textures.output.createView({ dimension: "2d-array" }); }
@@ -345,7 +349,12 @@ fn feathered(xy: vec2i, axis: vec2i) -> vec4f {
     /** Forget cached preparation; the next encode re-reads the fields. */
     invalidate() { this.preparedKey = null; this.selectedKey = null; }
     /** Destroy grown-out textures and parameter buffers after their encoders are submitted or dropped. */
-    dropRetired() { for (const resource of this.retired) resource.destroy(); this.retired = []; }
+    dropRetired() {
+      for (const resource of this.retired) resource.destroy();
+      this.retired = [];
+      this.retiredTextureBytes = 0;
+      this.onMemoryChange?.(this.bytes());
+    }
     release() { for (const texture of Object.values(this.textures)) texture.destroy(); this.textures = {}; this.capacity = null; this.dropRetired(); this.invalidate(); }
     destroy() { this.release(); }
   }

@@ -592,6 +592,44 @@ test("staging is a bounded ring: one queue drain per stream, not one per chunk",
   assert.ok(harness.buffers.every((buffer) => buffer.destroyed), "staging must be released");
 });
 
+for (const mode of ["mapping", "before publication"]) {
+  test(`device replacement ${mode} retires the old stream without publishing it`, async () => {
+    const backend = createBackend({ width: 128, height: 8 });
+    const Preview = loadPreview(backend.fetchImpl);
+    const preview = new Preview(null);
+    let started, resume;
+    const waiting = new Promise(resolve => { started = resolve; });
+    const hold = new Promise(resolve => { resume = resolve; });
+    const old = createDevice();
+    const fresh = createDevice();
+    preview.device = old.device;
+    const allocate = old.device.createBuffer;
+    const drain = old.device.queue.onSubmittedWorkDone;
+    if (mode === "mapping") {
+      old.device.createBuffer = descriptor => {
+        const buffer = allocate(descriptor), map = buffer.mapAsync;
+        buffer.mapAsync = async () => { started(); await hold; await map(); };
+        return buffer;
+      };
+    } else {
+      old.device.queue.onSubmittedWorkDone = async () => { await drain(); started(); await hold; };
+    }
+    const loading = preview.loadProxyStreaming("session", "hdr", 128, "{}", 0, "source", "key");
+    const rejected = assert.rejects(loading, error => error.superseded === true);
+    await waiting;
+    preview.device = mode === "mapping" ? null : fresh.device;
+    resume();
+    await rejected;
+    assert.equal(old.drains, 1);
+    assert.equal(fresh.drains, 0);
+    assert.equal(fresh.writes.length, 0);
+    if (mode === "mapping") assert.equal(old.writes.length, 0);
+    assert.ok(old.buffers.length > 0 && old.buffers.every(buffer => buffer.destroyed && !buffer.mapped));
+    assert.equal(old.textures[0].destroyed, true);
+    assert.equal(preview.proxies.size, 0);
+  });
+}
+
 test("the streaming route reads one response through the same bounded ring", async () => {
   const width = 1024;
   const height = 1200;

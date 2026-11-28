@@ -78,7 +78,8 @@ function createRecordingDevice() {
         bytesPerPixel,
         'test stub does not know the byte size of format "' + descriptor.format + '"',
       );
-      return register("texture", width * height * bytesPerPixel, {
+      const depth = descriptor.size.depthOrArrayLayers ?? descriptor.size[2] ?? 1;
+      return register("texture", width * height * depth * bytesPerPixel, {
         width,
         height,
         format: descriptor.format,
@@ -121,19 +122,20 @@ function loadPreviewModule() {
   vm.runInContext(graphScaleSource, context);
   vm.runInContext(allocatorSource, context);
   vm.runInContext(budgetSource, context);
+  vm.runInContext(frontendSource("hsl-selection-gpu.js"), context);
   vm.runInContext(shaderSource, context);
   vm.runInContext(source, context);
-  return context.window.HDRWebGPUPreview;
+  return { Preview: context.window.HDRWebGPUPreview, Hsl: context.HDRHslSelectionGpu };
 }
 
 function createPreview() {
-  const Preview = loadPreviewModule();
+  const { Preview, Hsl } = loadPreviewModule();
   const preview = new Preview(null);
   const { device, ledger } = createRecordingDevice();
   preview.device = device;
   // recordAllocation is a no-op unless instrumentation is on.
   preview.instrumentationEnabled = true;
-  return { preview, ledger };
+  return { preview, ledger, Hsl };
 }
 
 test("grading residency reports the four core textures the device actually created", () => {
@@ -153,6 +155,36 @@ test("grading residency reports the four core textures the device actually creat
   assert.equal(resources.memory.resident.categories.gradingCoreBytes, ledger.liveTextureBytes);
   assert.equal(resources.memory.resident.categories.gradingCoreBytes, 640 * 480 * 8 * 4);
   assert.equal(resources.gradingIntermediateBytes, ledger.liveTextureBytes);
+});
+
+test("session reset destroys the finished Direct texture as well as its companions", () => {
+  const { preview, ledger } = createPreview();
+  preview.ensureIntermediate({}, 640, 480, true, true, true);
+  preview.activeRenderCount = 1;
+  preview.resetSession("next");
+  assert.equal(preview.intermediates.size, 0);
+  assert.ok(ledger.liveBytes > 0, "the old encoder can still own the texture");
+  preview.finishActiveRender();
+  assert.equal(ledger.liveBytes, 0);
+  assert.equal(ledger.destroyed.length, ledger.created.length);
+});
+
+test("tile graph allocation failure rolls back partial textures and keeps the previous graph", () => {
+  const { preview, ledger } = createPreview();
+  const graph = preview.ensureTileGraph(64, 64, "rgba16float", "rgba16float");
+  const bytes = ledger.liveBytes;
+  const allocate = preview.device.createTexture;
+  let attempts = 0;
+  preview.device.createTexture = descriptor => {
+    if (++attempts === 8) throw Error("GPU allocation refused");
+    return allocate(descriptor);
+  };
+  assert.equal(preview.ensureTileGraph(128, 128, "rgba16float", "rgba16float", true, true), null);
+  assert.equal(attempts, 8);
+  assert.equal(preview.tileGraph, graph);
+  assert.equal(ledger.liveBytes, bytes);
+  assert.equal(ledger.destroyed.length, 7);
+  assert.equal(preview.gpuAllocator.usedBytes(), bytes);
 });
 
 test("resident total equals live device bytes across detail, spatial, scope, and parameter allocations", () => {
@@ -336,6 +368,77 @@ test("budget pressure evicts the global LRU across cache kinds, through each ent
   assert.equal(preview.gpuAllocator.usedBytes(), 24 * 24 * 8);
   assert.equal(ledger.destroyed.length >= 1, true);
   assert.ok(preview.maskTiles.get("mask:lru").allocatorEntry);
+});
+
+test("evicted textures stay charged through the active encoder and the owning queue fence", async () => {
+  const { preview, ledger } = createPreview();
+  let finish;
+  preview.device.queue = { onSubmittedWorkDone: () => new Promise(resolve => { finish = resolve; }) };
+  const retiring = cacheTexture(preview, 8, 8);
+  const warm = cacheTexture(preview, 8, 8);
+  let destroys = 0;
+  const destroy = retiring.texture.destroy;
+  retiring.texture.destroy = () => { destroys++; destroy(); };
+  preview.denoiseTiles.set("retiring", retiring);
+  preview.maskTiles.set("warm", warm);
+  preview.activeRenderCount = 1;
+  preview.gpuAllocator.setBudget(warm.byteSize);
+  assert.equal(preview.denoiseTiles.has("retiring"), false);
+  assert.equal(preview.maskTiles.has("warm"), true);
+  assert.equal(preview.gpuAllocator.usedBytes(), ledger.liveBytes);
+  assert.equal(preview.resourceMemorySnapshot().transient.totalBytes, retiring.byteSize);
+  assert.equal(destroys, 0);
+  preview.evictGpuCacheEntry("denoise-tile", "retiring");
+  // Independent fixture: exercise the retirement fence, not the idle trim.
+  preview.scheduleTileCacheTrim = () => {};
+  preview.finishActiveRender();
+  await Promise.resolve();
+  assert.equal(destroys, 1);
+  assert.equal(preview.gpuAllocator.snapshot().pendingRetireBytes, retiring.byteSize);
+  finish();
+  await Promise.resolve();
+  assert.equal(preview.resourceMemorySnapshot().transient.totalBytes, 0);
+  assert.equal(preview.gpuAllocator.usedBytes(), ledger.liveBytes);
+  assert.equal(destroys, 1);
+});
+
+test("committed bypass retires Detail, Clarity, Film and global HSL scratch but keeps accepted pixels and hue masks", () => {
+  const { preview, ledger, Hsl } = createPreview();
+  const canvas = {};
+  const direct = preview.ensureIntermediate(canvas, 320, 160, true, true, true);
+  const tiled = preview.ensureTileGraph(64, 64, "rgba16float", "rgba16float");
+  const maps = preview.clarityMapTextures("frame", 80, 40);
+  assert.equal(preview.gpuAllocator.snapshot().byKind["clarity-map"].bytes, maps.byteSize);
+  const accepted = preview.lastPresentedFrame = { completion: "accepted" };
+  preview.scopeSources.set(canvas, { spatialTexture: direct.finishTexture });
+  preview.hslSelectionEngines = new Map();
+  preview.hslSelectionTemplate = new Hsl(preview.device);
+  const global = preview.hslSelectionEngine(canvas, "direct");
+  const hueMask = preview.hslMaskEngine = preview.createHslSelectionEngine();
+  global.ensure(16, 16, 1, 4);
+  hueMask.ensure(32, 32, 2, 4);
+  const bytesBefore = ledger.liveBytes;
+  assert.equal(preview.resourceMemorySnapshot().resident.totalBytes, bytesBefore);
+  assert.equal(preview.gpuAllocator.snapshot().byKind["hsl-selection"].bytes, global.bytes() + hueMask.bytes());
+
+  preview.activeRenderCount = 1;
+  preview.retireInactiveGradeScratch({ detail: false, clarity: false, spatial: false, hsl: true }, () => true);
+  assert.equal(ledger.liveBytes, bytesBefore);
+  preview.finishActiveRender();
+  assert.equal(preview.hslMaskEngine, hueMask);
+  assert.equal(preview.hslSelectionEngines.size, 0);
+  assert.ok(direct.detailATexture, "local Detail is still using the pair");
+  assert.equal(preview.clarityMaps.get("frame"), maps);
+
+  preview.retireInactiveGradeScratch({ detail: true, clarity: true, spatial: true, hsl: true }, () => true);
+  assert.equal(direct.detailATexture, null);
+  assert.equal(direct.spatialATexture, null);
+  assert.equal(direct.lensGlowTexture, null);
+  assert.equal(tiled.detailScratchTexture, null);
+  assert.equal(preview.clarityMaps.size, 0);
+  assert.equal(preview.lastPresentedFrame, accepted);
+  assert.equal(preview.gpuAllocator.snapshot().byKind["hsl-selection"].bytes, hueMask.bytes());
+  assert.equal(preview.resourceMemorySnapshot().resident.totalBytes, ledger.liveBytes);
 });
 
 test("calibrated Auto lowers the budget, adopts the allocator, and reports its source", () => {
