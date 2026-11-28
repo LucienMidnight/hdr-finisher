@@ -9,17 +9,18 @@ excluded. At 100%, each sample sums the native viewport tiles' Mist time,
 excluding the separate reduced continuity picture. Values are medians and
 ranges, not the whole wait the user sees.
 
-| Black Pro-Mist cache miss | Old 27 lobes, `aee3d656` | Eight lobes, `7e689ff3` |
+| Black Pro-Mist cache miss | Old 27 lobes, `aee3d656` | Eight lobes with symmetric taps, `e8c183db` |
 | --- | ---: | ---: |
-| IMG_7723.CR3, 24 MP Fit | 105.15 (98.37–111.94) | 24.77 (23.53–32.77) |
-| DSC00636.ARW, 50 MP Fit | 85.92 (80.28–90.77) | Not measured |
-| IMG_7723.CR3, 100%, 24 native tiles | 266.90 (239.34–278.27) | Not measured |
-| DSC00636.ARW, 100%, 21 native tiles | 297.27 (267.78–310.18) | Not measured |
+| IMG_7723.CR3, 24 MP Fit | 105.15 (98.37–111.94) | 19.01 (18.81–27.20) |
+| DSC00636.ARW, 50 MP Fit | 85.92 (80.28–90.77) | 16.25 (16.12–24.77) |
+| IMG_7723.CR3, 100%, 24 native tiles | 266.90 (239.34–278.27) | 80.81 (74.91–87.36) |
+| DSC00636.ARW, 100%, 21 native tiles | 297.27 (267.78–310.18) | 82.51 (76.81–86.77) |
 
-The Canon trial reduced the median by 76%, but several misses still exceeded
-the 25 ms target. It predates symmetric weight reuse (`e8c183db`). GPU timing
-and delivery checks of that final version are pending because macOS could not
-allocate a named semaphore for the app backend.
+Both Fit medians are below 25 ms. Each Canon drag's first miss was 25.95–27.20
+ms, while all 19 later Canon misses were 18.81–19.40 ms. The Sony's first misses
+were 23.46–24.77 ms. Before symmetric weight reuse, the eight-lobe Canon trial
+at `7e689ff3` was 24.77 ms median (23.53–32.77). The timing does not qualify
+the whole Film stack's first presentation or settle, which also includes Grain.
 
 On the same Neo, forced-CPU native SDR JPEG export (quality 90, decoded source,
 same Film recipe, Grain off). Three interleaved samples per version measured
