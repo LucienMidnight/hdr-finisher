@@ -935,13 +935,12 @@ function registerIpc() {
     await shell.openExternal(url);
     return true;
   });
-  handle("desktop:set-document-state", (next = {}) => {
+  handle("desktop:set-document-state", async (next = {}) => {
     const nextPath = typeof next.path === "string" ? next.path : "";
     if (nextPath && !knownProjectPaths.has(pathKey(nextPath))) throw new Error("Unknown project path.");
-    if (nextPath && nextPath !== documentState.path) {
-      try { recentProjects.remember(nextPath); }
-      catch (error) { console.warn("The project could not be added to Recent projects.", error); }
-    }
+    const remembered = nextPath && nextPath !== documentState.path
+      ? recentProjects.remember(nextPath).catch((error) => console.warn("The project could not be added to Recent projects.", error))
+      : null;
     documentState = {
       path: nextPath,
       dirty: Boolean(next.dirty),
@@ -959,6 +958,9 @@ function registerIpc() {
         mainWindow.close();
       }
     }
+    // Update the window and finish close-after-save synchronously; waiting
+    // before those changes would let newer document-state events overtake us.
+    await remembered;
     return true;
   });
   ipcMain.on("desktop:set-operation-progress", (event, progress = {}) => {
@@ -1371,6 +1373,7 @@ async function beginShutdown() {
     } finally {
       backendLogWriter?.events.flush();
       if (backendLogWriter) await new Promise(resolve => backendLogWriter.log.end(resolve));
+      await recentProjects.flush();
       shutdownComplete = true;
       if (failedTest) app.exit(1);
       else app.quit();
