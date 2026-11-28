@@ -1,0 +1,51 @@
+diff --git a/codebase/backend/hdr_finisher/sessions.py b/codebase/backend/hdr_finisher/sessions.py
+index f814484d..65e4b9d0 100644
+--- a/codebase/backend/hdr_finisher/sessions.py
++++ b/codebase/backend/hdr_finisher/sessions.py
+@@ -430,7 +430,9 @@ class SessionStore:
+         """Atomically replace source pixels while preserving the edit document."""
+         with self._lock:
+             current = self.get(session_id)
+-            if developed.source_fingerprint_sha256 != current.source_fingerprint_sha256:
++            if (developed.source_fingerprint_sha256 != current.source_fingerprint_sha256
++                    or developed.interpretation_override != current.interpretation_override
++                    or developed.hdr_reference_white_nits != current.hdr_reference_white_nits):
+                 raise ValueError("RAW re-development source no longer matches the active session.")
+ 
+             developed.session_id = current.session_id
+diff --git a/codebase/tests/test_extended_formats.py b/codebase/tests/test_extended_formats.py
+index b59751a6..2a62bcf3 100644
+--- a/codebase/tests/test_extended_formats.py
++++ b/codebase/tests/test_extended_formats.py
+@@ -772,6 +772,31 @@ def test_raw_redevelopment_preserves_edit_document_and_session_identity(tmp_path
+     assert reloaded.raw_import_settings.lens.mode == "off"
+ 
+ 
++@pytest.mark.parametrize("change", ["interpretation", "reference-white"])
++def test_raw_redevelopment_rejects_pixels_prepared_before_a_source_context_change(tmp_path: Path, change: str) -> None:
++    source = tmp_path / "source.png"
++    Image.new("RGB", (64, 32), (80, 120, 160)).save(source)
++    sessions = SessionStore()
++    initial = sessions.create_session(source, hdr_reference_white_nits=203)
++    developed = sessions.prepare_session(source, hdr_reference_white_nits=203)
++
++    if change == "interpretation":
++        sessions.update_source_interpretation(initial.session_id, SourceInterpretationOverride(color_space="Display P3"))
++    else:
++        sessions.apply_edit_commands(initial.session_id, [EditCommand(expected_revision=0,
++            command_type="set_hdr_reference_white", payload={"hdr_reference_white_nits": 100})])
++    current = sessions.get(initial.session_id)
++    previous = current.image.copy()
++    revision = current.edit_revision
++    if change == "interpretation":
++        assert not np.array_equal(developed.image, previous)
++
++    with pytest.raises(ValueError, match="RAW re-development source no longer matches"):
++        sessions.redevelop_session(initial.session_id, developed)
++    assert sessions.get(initial.session_id) is current and current.edit_revision == revision
++    np.testing.assert_array_equal(current.image, previous)
++
++
+ def test_import_job_redevelopment_preserves_project_reference_white(tmp_path: Path, monkeypatch) -> None:
+     source = tmp_path / "source.png"
+     Image.new("RGB", (512, 256), (80, 120, 160)).save(source)
