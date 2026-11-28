@@ -332,7 +332,14 @@ async function serveSdrMatchCandidates(sessionId, revision, finished, action) {
     }
     if (!response.ok) return;
     seen = true;
-    const job = await response.json();
+    let job;
+    try {
+      job = await response.json();
+    } catch (error) {
+      // The backend already falls back when a candidate cannot be returned.
+      console.warn("Match candidate response could not be read.", error);
+      return;
+    }
     const receivedAt = performance.now();
     if (job.local_adjustments) locals = job.local_adjustments;
     let pixels = null;

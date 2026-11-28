@@ -1,6 +1,24 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
+
+test('a truncated Match candidate response stops the GPU worker without rejecting', async () => {
+ const calls = [], errors = [];
+ const context = vm.createContext({
+  state: {session: {session_id: 'photo', source: {width: 800, height: 600}},
+   gpuPreview: {renderMatchCandidate: () => calls.push('render')}},
+  fetch: async url => {
+   calls.push(url);
+   return {ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected end of JSON'); }};
+  },
+  performance, console: {warn: (_message, error) => errors.push(error.name)},
+ });
+ vm.runInContext(fs.readFileSync(path.join(__dirname, '../frontend/sdr-match-ui.js'), 'utf8'), context);
+ await context.serveSdrMatchCandidates('photo', 2, () => false);
+ assert.deepEqual(calls, ['/api/session/photo/sdr-match/candidate?wait_ms=500']);
+ assert.deepEqual(errors, ['SyntaxError']);
+});
+
 for (const responseStatus of [200, 409, 500]) {
  test(`a Match response (${responseStatus}) for a replaced photo cannot update the new photo`, async () => {
   let finish, requested;
