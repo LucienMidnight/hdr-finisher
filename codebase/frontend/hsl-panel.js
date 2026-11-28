@@ -288,11 +288,11 @@ function hslPoint(event){
 function hslPickStart(event){if(!hslUI.picker||event.button!==0||!state.session||!els.previewPrimaryPane.contains(event.target)||event.target.closest('button,input,select,textarea,a,[role="button"]'))return;const point=hslPoint(event);if(!point)return;event.preventDefault();event.stopImmediatePropagation();hslUI.stroke={ui:hslUI.picker,points:[point],lane:state.currentView,session:state.session.session_id,localId:hslUI.picker.scope==='local'?selectedLocal()?.id:null};}
 function hslPickMove(event){const s=hslUI.stroke;if(!s)return;event.preventDefault();event.stopImmediatePropagation();const p=hslPoint(event),last=s.points.at(-1);if(p&&s.points.length<512&&Math.hypot(p.x-last.x,p.y-last.y)>.003)s.points.push(p);}
 function hslPickEnd(event){if(!hslUI.stroke)return;event.preventDefault();event.stopImmediatePropagation();const s=hslUI.stroke;hslUI.stroke=null;void hslPickSamples(s);}
-async function hslFetchStage(ui,points,extra={}, {draft=false, isCurrent=()=>true}={}){
+async function hslFetchStage(ui,points,extra={}, {draft=false, isCurrent=()=>true, saveError="The current edit could not be saved."}={}){
   // Selection requests already carry the in-memory recipe and stage settings.
   // Do not turn every pointer move into a history/save round trip.
   if(!draft){
-    if(await syncGlobalEditState()===false)throw Error("The current edit could not be saved.");
+    if(await syncGlobalEditState()===false)throw Error(saveError);
     await state.editCommandQueue;
   }
   if(!isCurrent())return null;
@@ -305,10 +305,8 @@ async function hslPickSamples(stroke){
   if(ui.sampling){hslNotice(ui,"Wait for the current colour sample to finish.");return;}ui.sampling=true;
   try{
     hslNotice(ui,'Sampling colours…');
-    if(await syncGlobalEditState()===false)throw Error('Save the current edit before picking colours.');
-    if(!current())return;
-    const result=await hslFetchStage(ui,stroke.points);
-    if(!current())return;
+    const result=await hslFetchStage(ui,stroke.points,{},{isCurrent:current,saveError:'Save the current edit before picking colours.'});
+    if(!result||!current())return;
     const samples=result.samples.filter(v=>HDRHSL.describe(v).relativeChroma>=.02&&Math.abs(HDRHSL.describe(v).L)>=1e-5);
     if(!samples.length){hslNotice(ui,'That sample is too grey to have a hue. Pick a more colourful area.');return;}
     hslEdit(ui,()=>{

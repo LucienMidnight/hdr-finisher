@@ -65,7 +65,10 @@ test('2x picker sends normalized coordinates and applies the returned colour to 
   Object.assign(ui, { channel: 'red', mode: 'pick' });
   context.state.adjustments = {};
   context.state.editRevision = 7;
-  context.syncGlobalEditState = async () => true;
+  let saves = 0;
+  let acknowledge;
+  context.syncGlobalEditState = async () => { saves++; return true; };
+  context.state.editCommandQueue = new Promise(resolve => { acknowledge = resolve; });
   context.localAdjustments = () => [];
   context.safeJson = response => response.json();
   context.hslNotice = (_ui, text) => { ui.notice = text; };
@@ -77,7 +80,13 @@ test('2x picker sends normalized coordinates and applies the returned colour to 
     return { ok: true, json: async () => ({ samples: [[.8, .1, .02]], edit_revision: 7 }) };
   };
   context.hslPickStart(event(900, 600));
-  await context.hslPickSamples(context.ui.stroke);
+  const pending = context.hslPickSamples(context.ui.stroke);
+  await new Promise(setImmediate);
+  assert.equal(saves, 1);
+  assert.equal(body, undefined);
+  acknowledge();
+  await pending;
+  assert.equal(saves, 1);
   assert.deepEqual(body.points, [{ x: .5, y: .5 }]);
   assert.equal(body.lane, 'hdr');
   assert.equal(body.edit_revision, 7);
