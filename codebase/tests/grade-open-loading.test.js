@@ -113,6 +113,71 @@ test('RAW redevelopment keeps the current picture and releases GPU work before s
   await verifyGradeRecovery();
 });
 
+test('unchanged RAW Apply keeps the finished picture but publishes the usual save state and status', async () => {
+  const { c, events } = harness();
+  const editDocument = { local_adjustments: [], source: { durable_path: '/photos/a.ARW' }, hdr_reference_white_nits: 203 };
+  const oldSession = { session_id: 'old', source: { suffix: '.arw', filename: 'a.ARW' }, edit_document: editDocument };
+  const picture = { exact: true, sourceSerial: 123 };
+  const runtime = { hdr: { status: 'ready' } };
+  Object.assign(c.state, { session: oldSession, editDocument, editRevision: 8, documentDirty: false,
+    activeWorkflow: 'grade', currentView: 'hdr', zoomMode: 'fit', compareLayout: 'single',
+    acceptedPresentation: picture, denoiseRuntime: runtime });
+  const viewport = { scrollLeft: 0, scrollTop: 0, scrollWidth: 100, clientWidth: 100, scrollHeight: 100, clientHeight: 100 };
+  Object.assign(c.els, { dropzone: viewport, applyRawSettings: {}, rawSettingsPanel: { dataset: {} },
+    lensMode: { value: 'auto' }, lensDistortion: { checked: true }, lensChromaticAberration: { checked: true },
+    lensVignetting: { checked: true }, lensFocal: {}, lensAperture: {}, lensDistance: {} });
+  const noOp = () => {};
+  Object.assign(c, { desktop: { grantSourcePath: async file => ({ path: file, grant: 'file-token' }) },
+    geometryDraftActive: () => false, holdingNativeDenoisePictureForFit: () => false,
+    scopePresentationMatches: frame => frame === picture, viewerState: () => ({ status: 'ready' }),
+    clamp: (value, lo, hi) => Math.max(lo, Math.min(hi, value)), applyZoomGeometry: noOp,
+    applyNewSessionPreferences: noOp, loadDenoiseDocument: noOp, recordAcknowledgedLocals: noOp,
+    renderSession: noOp, renderLocalAdjustments: noOp, seedExportFieldsFromSession: noOp,
+    prepareInactivePreview: noOp, refreshOverlayAndScopesImmediately: noOp,
+    syncDesktopDocumentState: () => events.push(['save', c.state.documentDirty, c.state.editRevision]),
+    retireActiveSession: (_id, { retainPreview }) => assert.ok(retainPreview),
+    renderGpuDraft: () => assert.fail('redrew the already exact preview') });
+  c.state.gpuPreview.releaseForSourceReplacement = () => assert.fail('released GPU resources');
+  c.state.gpuPreview.resetSession = () => assert.fail('reset GPU resources');
+  c.HDRGradeSaving.hasGrade = () => false;
+  c.HDRGradeSaving.activated = noOp;
+  c.projectIo.createImportJob = () => assert.fail('started a new import');
+  c.projectIo.reuseRawApply = async (_fetch, selection, revision) => {
+    assert.equal(selection.grant, 'file-token');
+    assert.equal(selection.rawImportSettings.lens.mode, 'auto');
+    assert.equal(revision, 8);
+    return { ...oldSession, dirty: true, edit_revision: 9 };
+  };
+  await c.applyRawImportSettings();
+  assert.equal(c.state.acceptedPresentation, picture);
+  assert.equal(c.state.denoiseRuntime, runtime);
+  assert.deepEqual(events.find(e => e[0] === 'save'), ['save', true, 9]);
+  assert.ok(events.some(e => e.id === 'import' && e.severity === 'success' && e.message === 'Source imported.'));
+  assert.equal(c.els.applyRawSettings.disabled, false);
+});
+
+test('RAW reuse refusal or connection failure still releases the GPU and submits a redevelopment', async () => {
+  for (const reject of [false, true]) {
+    const { c, events, resolve } = harness();
+    c.state.editRevision = 8;
+    c.state.previewGeneration = {};
+    c.suspendGradeInstruments = () => {};
+    c.settlePreview = async () => {};
+    c.refreshOverlayAndScopesImmediately = () => {};
+    c.state.gpuPreview.releaseForSourceReplacement = async () => events.push('release');
+    c.projectIo.reuseRawApply = async () => {
+      events.push('check');
+      if (reject) throw Error('Connection failed');
+      return null;
+    };
+    const create = c.projectIo.createImportJob;
+    c.projectIo.createImportJob = (...args) => { events.push('develop'); return create(...args); };
+    resolve({ response: { ok: false }, payload: { detail: 'Import failed.' } });
+    await c.openStagedDesktopSource({ path: '/photos/a.ARW', replaceSessionId: 'old', checkRawReuse: true });
+    assert.deepEqual(events.filter(e => ['check', 'release', 'develop'].includes(e)), ['check', 'release', 'develop']);
+  }
+});
+
 function trackGradeRecovery(c, events) {
   const originalSession = c.state.session;
   const accepted = { lane: 'sdr', generation: 7, geometrySignature: 'original', exact: true,

@@ -1736,6 +1736,10 @@ def _lens_database() -> Any | None:
 
 @lru_cache(maxsize=1)
 def _lens_database_identity() -> str | None:
+    return _read_lens_database_identity()
+
+
+def _read_lens_database_identity() -> str | None:
     try:
         import lensfunpy
 
@@ -1751,3 +1755,42 @@ def _lens_database_identity() -> str | None:
         return f"sha256:{digest.hexdigest()}"
     except (ImportError, OSError):
         return None
+
+
+def raw_apply_matches(requested: RawImportSettings, decoded: RawImportSettings,
+                      accepted: RawImportSettings, lens_result: dict) -> bool:
+    """Check editable settings and that a new decode would save the same recipe."""
+    def editable(settings):
+        lens = settings.lens
+        return settings.model_copy(update={"lens": lens.model_copy(update={
+            "database_version": None,
+            "profile_id": None if lens.mode == "auto" else lens.profile_id,
+        })})
+
+    if requested.lens.database_version is not None or requested != editable(accepted) or requested != editable(decoded):
+        return False
+    if requested.lens.mode == "off":
+        return requested == accepted
+
+    # An Auto match supplies provenance, not editable values. An unresolved
+    # lens must not leave stale provenance in the saved recipe on reuse.
+    expected = requested
+    if lens_result.get("applied"):
+        expected = requested.model_copy(update={"lens": requested.lens.model_copy(update={
+            "profile_id": lens_result.get("profile", {}).get("id") or requested.lens.profile_id,
+            "database_version": lens_result.get("database_version"),
+        })})
+    if expected != accepted:
+        return False
+    loaded_identity = _lens_database_identity()
+    if (not loaded_identity or loaded_identity != _read_lens_database_identity()
+            or (lens_result.get("applied") and lens_result.get("database_version") != loaded_identity)):
+        return False
+    # The saved identity covers the bundled XML only. Lensfun can override
+    # it from system/user databases, whose exact identity we don't have. Use
+    # its own loader to rule out those profiles at decode time and now.
+    loaded = _lens_database()
+    if loaded is None or loaded.has_common_profiles:
+        return False
+    common = native_lens_database(load_bundled=False)
+    return common is not None and not common.has_common_profiles

@@ -67,6 +67,7 @@ from .models import (
     PerspectiveSolveRequest,
     PerspectiveSolveResponse,
     ImportJobRequest,
+    RawApplyReuseRequest,
     LocalLuminanceSampleRequest,
     LocalLuminanceSampleResponse,
     LocalMaskPreviewRequest,
@@ -604,6 +605,19 @@ def create_import_job(request: ImportJobRequest) -> dict[str, object]:
         ).payload()
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/session/{session_id}/raw-apply-reuse", response_model=SessionSummary)
+def reuse_raw_apply(session_id: str, request: RawApplyReuseRequest) -> SessionSummary:
+    try:
+        # Keep the one-use grant valid for the normal job if reuse is refused.
+        path = desktop_path_grants.resolve(request.grant, "source-open")
+    except ValueError:
+        return SessionSummary(session=None)
+    return SessionSummary(session=store.reuse_raw_apply(
+        session_id, path, request.raw_import_settings, request.expected_revision,
+        lambda: desktop_path_grants.consume(request.grant, "source-open"),
+    ))
 
 
 @app.post("/api/import-jobs/presented")

@@ -44,6 +44,7 @@ from .models import (
     SourceInterpretationOverride,
     SourceReference,
 )
+from .raw_import import RAW_EXTENSIONS, raw_apply_matches
 from .render_cache import SessionRenderCache, SourceMipIdentity, default_source_mip_store
 from .source_luminance import describe_source_luminance
 from .sdr_match import MATCH_ANALYSIS_EDGE, MatchSection, SDRMatchMaterializationError, materialize_sdr_match
@@ -477,6 +478,39 @@ class SessionStore:
             if getattr(self, "grade_recovery_observer", None):
                 self.grade_recovery_observer(developed)
             return payload
+
+    def reuse_raw_apply(self, session_id: str, path: Path, settings: RawImportSettings,
+                        expected_revision: int, consume_grant: Callable[[], Path]) -> SessionPayload | None:
+        """Accept an exact Apply without replacing any source or render resources."""
+        with self._lock:
+            current = self._current
+            if (current is None or current.session_id != session_id or current.edit_revision != expected_revision
+                    or current.grade_notice or current.owns_source_path or path.suffix.lower() not in RAW_EXTENSIONS):
+                return None
+            decoded = current.source_decode
+            if (decoded is None or decoded.original() is not current.retouch_original
+                    or decoded.interpretation_override != current.interpretation_override
+                    or decoded.reference_white_nits != current.hdr_reference_white_nits):
+                return None
+            try:
+                if (path != current.source_path.resolve() or source_stat_key(path) != decoded.stat_key
+                        or not raw_apply_matches(settings, decoded.raw_import_settings, current.raw_import_settings,
+                                                 current.metadata.get("lens_correction") or {})
+                        or _sha256_file(path) != current.source_fingerprint_sha256
+                        or source_stat_key(path) != decoded.stat_key):
+                    return None
+                payload = current.to_payload()
+                if consume_grant() != path:
+                    return None
+            except (OSError, ValueError, AttributeError, RuntimeError):
+                return None
+            # Match a successful replacement's dirty/revision and recovery
+            # behaviour, even though there is no new undo entry or picture.
+            current.edit_revision += 1
+            current.dirty = True
+            if getattr(self, "grade_recovery_observer", None):
+                self.grade_recovery_observer(current)
+            return payload.model_copy(update={"edit_revision": current.edit_revision, "dirty": True})
 
     def current(self) -> LoadedSession | None:
         with self._lock:

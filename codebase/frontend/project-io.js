@@ -76,6 +76,15 @@
     });
   }
 
+  async function reuseRawApply(fetchFn, { grant, rawImportSettings, replaceSessionId }, expectedRevision) {
+    const { response, payload } = await postJson(fetchFn, `/api/session/${replaceSessionId}/raw-apply-reuse`, {
+      grant,
+      raw_import_settings: rawImportSettings,
+      expected_revision: expectedRevision,
+    });
+    return response.ok && payload?.session?.session_id === replaceSessionId ? payload.session : null;
+  }
+
   function pollImportJob(fetchFn, jobId) {
     return requestJson(fetchFn, `/api/import-jobs/${jobId}`);
   }
@@ -109,6 +118,7 @@
     saveDesktopProject,
     savePathProject,
     createImportJob,
+    reuseRawApply,
     pollImportJob,
     cancelImportJob,
     fetchSession,

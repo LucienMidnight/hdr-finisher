@@ -208,6 +208,20 @@ async function openStagedDesktopSource(selection) {
     status.post({ id: "import", severity: "progress", message: `Loading ${name}…`, progress: "indeterminate" });
     state.importInProgress = true;
     updateExportAvailability();
+    if (selection.checkRawReuse && state.rawRedevelopGeneration == null && !state.globalEditSyncPending
+      && !state.globalEditDirty) {
+      const session = await projectIo.reuseRawApply(request, selection, state.editRevision).catch(() => null);
+      if (generation !== state.importGeneration) return;
+      if (session) {
+        await activateDesktopSession(session, state.projectPath, generation, {
+          replaceSessionId: selection.replaceSessionId, reuseRawSource: true,
+        });
+        if (generation !== state.importGeneration) return;
+        completed = true;
+        status.post({ id: "import", severity: "success", message: "Source imported." });
+        return;
+      }
+    }
     setIndeterminatePreviewMessage("Starting import · 0.0s elapsed");
     setImportCancelVisible(true);
     const recoveryChoice = selection.replaceSessionId ? null : await window.HDRGradeSaving.prepare(selection);
@@ -355,16 +369,27 @@ function retainedRedevelopmentZoom(session) {
 
 // stayOnTab: a background reload of the open photo (paste, outside change) keeps the current page.
 async function activateDesktopSession(session, projectPath, openGeneration = null,
-  { stayOnTab = false, openingJobId = null, replaceSessionId = null } = {}) {
+  { stayOnTab = false, openingJobId = null, replaceSessionId = null, reuseRawSource = false } = {}) {
   const redevelopment = Boolean(replaceSessionId && state.session?.session_id === replaceSessionId
     && session.session_id === replaceSessionId);
   const zoom = redevelopment ? retainedRedevelopmentZoom(session) : null;
-  retireActiveSession(session.session_id, { preservePicture: redevelopment });
-  gradeOpening.reset(openingJobId);
+  const applyDefaultWhite = !projectPath && !window.HDRGradeSaving?.hasGrade(session.session_id);
+  const defaultWhite = Number(state.appPreferences?.defaultReferenceWhiteNits) === 100 ? 100 : 203;
+  // A lane, draft or framing change still needs its usual redraw. When
+  // the settled picture is already the one Apply would show, keep it too.
+  const retainPreview = reuseRawSource && state.activeWorkflow === "grade" && state.currentView === "hdr"
+    && (state.zoomMode === "fit" || zoom) && state.compareLayout === "single" && !state.comparePeekActive
+    && !state.beforePeekWanted && !state.denoiseNoiseView && !state.denoiseRuntime.hdr.showOriginal
+    && !state.localPreviewDirty && !state.localMaskDraftDirty && !state.localPointerGesture
+    && !state.cropMode && !geometryDraftActive() && !holdingNativeDenoisePictureForFit()
+    && scopePresentationMatches(state.acceptedPresentation, "hdr") && viewerState().status === "ready"
+    && (!applyDefaultWhite || session.edit_document.hdr_reference_white_nits === defaultWhite);
+  retireActiveSession(session.session_id, { preservePicture: redevelopment, retainPreview });
+  if (!reuseRawSource) gradeOpening.reset(openingJobId);
   // Re-developing the open photo keeps its panels open (Steve, November 25).
   if (!stayOnTab && !redevelopment) collapseGradeModules();
   state.session = session;
-  state.renderCoordinator?.noteSource(session.session_id);
+  if (!retainPreview) state.renderCoordinator?.noteSource(session.session_id);
   state.importInProgress = false;
   if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
   state.adjustments = session.adjustments;
@@ -378,13 +403,15 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
   state.currentView = "hdr";
   state.zoomMode = zoom ? "custom" : "fit";
   state.zoomPercent = zoom?.percent ?? 100;
-  state.zoomReferenceFrame = null;
-  if (!projectPath && !window.HDRGradeSaving?.hasGrade(session.session_id)) await applyNewSessionPreferences();
+  if (!retainPreview) state.zoomReferenceFrame = null;
+  if (applyDefaultWhite) await applyNewSessionPreferences();
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
-  state.gpuPreview?.resetSession(session.session_id);
-  if(state.gpuPreview)state.gpuPreview.deferDenoiseWarm = true;
-  invalidatePreview("hdr", { markDirty: false });
-  invalidatePreview("sdr", { markDirty: false });
+  if (!reuseRawSource) state.gpuPreview?.resetSession(session.session_id);
+  if (!retainPreview) {
+    if (state.gpuPreview) state.gpuPreview.deferDenoiseWarm = true;
+    invalidatePreview("hdr", { markDirty: false });
+    invalidatePreview("sdr", { markDirty: false });
+  }
   activateWorkflowTab(stayOnTab ? state.activeWorkflow : "grade", { focus: false });
   renderSession();
   renderLocalAdjustments();
@@ -395,6 +422,14 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
     const viewport = els.dropzone;
     viewport.scrollLeft = clamp(zoom?.left ?? 0, 0, Math.max(0, viewport.scrollWidth - viewport.clientWidth));
     viewport.scrollTop = clamp(zoom?.top ?? 0, 0, Math.max(0, viewport.scrollHeight - viewport.clientHeight));
+  }
+  if (retainPreview) {
+    refreshOverlayAndScopesImmediately();
+    hidePreviewMessage();
+    prepareInactivePreview();
+    syncDesktopDocumentState();
+    window.HDRGradeSaving?.activated(session, projectPath);
+    return;
   }
   let gpuReady = await renderGpuDraft("hdr", { hideStatus: false, longEdge: settledProxyLongEdge() });
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;

@@ -1621,6 +1621,10 @@ class ImportJobRequest(BaseModel):
     replace_session_id: str | None = None
 
 
+class RawApplyReuseRequest(DesktopSessionOpenRequest):
+    expected_revision: int = Field(ge=0)
+
+
 class DesktopProjectOpenRequest(BaseModel):
     project_grant: str
     source_grant: str | None = None

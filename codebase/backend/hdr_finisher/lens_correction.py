@@ -92,7 +92,7 @@ def _utf8(value):
     return value.encode("utf-8") if value is not None else None
 
 
-def native_lens_database():
+def native_lens_database(*, load_bundled=True):
     """Use the same Lensfun searches, with addresses owned by this database."""
     try:
         import lensfunpy
@@ -136,11 +136,14 @@ def native_lens_database():
                 raise OSError("Lensfun could not create its database")
             # Mirror Database() in lensfunpy, including later common entries
             # overriding bundled entries. The base object owns an empty DB.
-            for file in sorted(glob(str(root / "db_files" / "*.xml"))):
-                if native.db_load_file(self.handle, _utf8(file)):
-                    raise OSError("Lensfun could not load its bundled profile")
-            if native.db_load(self.handle) not in (0, _NO_DATABASE):
+            if load_bundled:
+                for file in sorted(glob(str(root / "db_files" / "*.xml"))):
+                    if native.db_load_file(self.handle, _utf8(file)):
+                        raise OSError("Lensfun could not load its bundled profile")
+            common_status = native.db_load(self.handle)
+            if common_status not in (0, _NO_DATABASE):
                 raise OSError("Lensfun could not load its common profiles")
+            self.has_common_profiles = common_status == 0
 
         def __del__(self):
             handle, self.handle = getattr(self, "handle", None), None

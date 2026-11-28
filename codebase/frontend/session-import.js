@@ -609,6 +609,7 @@ async function applyRawImportSettings() {
       ...selection,
       rawImportSettings,
       replaceSessionId: sessionId,
+      checkRawReuse: true,
     });
   } finally {
     els.applyRawSettings.disabled = false;
@@ -697,7 +698,7 @@ function renderInterpretationGate() {
   });
 }
 
-function retireActiveSession(replacementSessionId = null, { preservePicture = false } = {}) {
+function retireActiveSession(replacementSessionId = null, { preservePicture = false, retainPreview = false } = {}) {
   if (state.session?.session_id && state.session.session_id !== replacementSessionId) window.HDRGradeOpenFailed?.(state.session.session_id);
   suspendGradeInstruments();
   status.clear("match");
@@ -765,7 +766,7 @@ function retireActiveSession(replacementSessionId = null, { preservePicture = fa
   state.localMaskCommitRefreshPending = false;
   state.localMaskCommitSettlePending = false;
   state.localErase = false;
-  clearPreviewCache({ preservePicture });
+  if (!retainPreview) clearPreviewCache({ preservePicture });
 }
 
 async function cancelActiveImport() {

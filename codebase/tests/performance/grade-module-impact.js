@@ -336,10 +336,15 @@ function installObserve() {
   }, true);
   audit.finished = drain => {
     const r = audit.step, accepted = state.acceptedPresentation;
-    if (!r || r.firstAt === null || r.releaseAt === null || !audit.stable(drain)) return false;
+    if (!r || r.firstAt === null || r.releaseAt === null) return false;
     if (r.raw && state.importGeneration === r.importGeneration) return false;
+    // An exact retained picture has no new frame to fence. Time the Apply
+    // completion, when its revision is accepted and its button is available.
+    if (r.unchangedRaw && accepted === r.beforePicture && !els.applyRawSettings.disabled
+      && !state.importInProgress && state.editRevision > r.beforeRevision) r.retainedAt ??= performance.now();
+    if (!audit.stable(drain)) return false;
     const last = r.frames.findLast(f => f.accepted === accepted && f.currentAtCompletion);
-    if (!last) return false;
+    if (!last && r.retainedAt == null) return false;
     if (drain) return { drainedAt: performance.now() };
     return true;
   };
@@ -431,11 +436,13 @@ async function signature(page, screen = false) {
 
 function measureWith(page, memory) {
   const requests = [];
+  let rawImports = 0;
   let measuring = false;
   page.on('request', request => {
     if (measuring && request.method() === 'POST' && /\/denoise(?:[-/][^?]+)?(?:\?|$)/.test(request.url())) {
       requests.push(new URL(request.url()).pathname);
     }
+    if (measuring && request.method() === 'POST' && new URL(request.url()).pathname === '/api/import-jobs') rawImports++;
   });
   return async (descriptor, action) => {
     const locator = await reveal(page, descriptor.selector);
@@ -445,10 +452,12 @@ function measureWith(page, memory) {
     const baseline = await memory.baseline(), errorAt = memory.errors.length;
     let visible, outcome;
     requests.length = 0;
+    rawImports = 0;
     measuring = true;
     try {
       await page.evaluate(d => {
         const r = __moduleAudit.step = { ...d, firstAt: null, releaseAt: null, frames: [], errors: [],
+          beforePicture: state.acceptedPresentation, beforeRevision: state.editRevision,
           importGeneration: state.importGeneration, allocator: __moduleAudit.allocator(),
           denoiseEventIndex: __moduleAudit.denoiseEvents.length,
           rawPhaseIndex: __moduleAudit.rawPhases.length, preparationBefore: __moduleAudit.preparation() };
@@ -467,6 +476,7 @@ function measureWith(page, memory) {
       outcome = await page.evaluate(drainedAt => {
         const r = __moduleAudit.step, a = state.acceptedPresentation;
         const last = r.frames.findLast(f => f.accepted === a && f.currentAtCompletion);
+        const completedAt = last?.completedAt ?? r.retainedAt;
         const first = r.frames.filter(f => f.fenced && f.currentAtCompletion)
           .sort((a, b) => a.completedAt - b.completedAt)[0];
         const fallbacks = new Set(r.frames.flatMap(f => f.accepted.fallbackReason ? [f.accepted.fallbackReason] : []));
@@ -480,10 +490,12 @@ function measureWith(page, memory) {
         const events = __moduleAudit.denoiseEvents.slice(r.denoiseEventIndex);
         const countEvent = event => events.filter(name => name === event).length;
         return {
-          first_feedback_ms: first ? first.completedAt - r.firstAt : null,
-          settle_ms: Math.max(0, last.completedAt - r.releaseAt),
+          first_feedback_ms: (first?.completedAt ?? r.retainedAt) != null
+            ? (first?.completedAt ?? r.retainedAt) - r.firstAt : null,
+          settle_ms: Math.max(0, completedAt - r.releaseAt),
           drained_ms: Math.max(0, drainedAt - r.releaseAt),
-          whole_wait_ms: last.completedAt - r.firstAt, route, fallbacks: [...fallbacks],
+          whole_wait_ms: completedAt - r.firstAt, route, fallbacks: [...fallbacks],
+          retainedPicture: !last && a === r.beforePicture,
           processedLongEdge: a.processedLongEdge, allocator: r.allocator, errors: r.errors,
           reduced: reduced ? { requestedLongEdge: requiredProcessingLongEdge(), actualLongEdge: a.processedLongEdge, reason: reduced } : null,
           rawPhases: __moduleAudit.rawPhases.slice(r.rawPhaseIndex),
@@ -501,6 +513,7 @@ function measureWith(page, memory) {
         __moduleAudit.step = null;
       }).catch(() => {}), 'Stop renderer observation', 1500).catch(() => {});
     }
+    outcome.rawImports = rawImports;
     outcome.denoisePreparation.cpuPreparationMisses = Math.max(outcome.denoisePreparation.cpuPreparationMisses,
       requests.filter(url => /denoise-(?:grain|micro|prepare)(?:\/|$)/i.test(url)).length);
     outcome.errors.push(...memory.errors.slice(errorAt).filter(Boolean));
@@ -897,6 +910,13 @@ async function ownControls(page, id, rendition, zoom) {
     { ...button('#raw-remove-hot-pixels', 'hot-pixels.click'), raw: true, disclosure: true },
   ];
   if (id === 'raw.lens') return [
+    ...(rendition === 'hdr' && zoom === 'fit' ? [
+      { ...button('#apply-raw-settings', 'unchanged.apply'), raw: true, disclosure: true, unchangedRaw: true },
+      ...(process.env.HDR_FINISHER_AUDIT_RAW_APPLY_BASELINE === '1' ? [
+        { ...button('#apply-raw-settings', 'unchanged-full.apply'), raw: true, disclosure: true,
+          unchangedRaw: true, forceRawFull: true },
+      ] : []),
+    ] : []),
     { ...button('#lens-distortion', 'distortion.click'), raw: true, disclosure: true, applyRaw: true },
     { ...button('#apply-raw-settings', 'mode-off.apply'), raw: true, disclosure: true, prepLensOff: true },
   ];
@@ -1147,9 +1167,24 @@ async function auditModule(page, measure, row, cfg, defaults) {
     for (const d of await ownControls(page, id, rendition, zoom)) {
       const label = d.type === 'range' && !d.name.endsWith('.drag') ? d.name + '.drag' : d.name;
       const target = timedStep(row, `own.${id}.${label}`, 'own', 'on');
+      if (d.unchangedRaw && await page.locator('#raw-settings-toggle').getAttribute('aria-expanded') !== 'true') {
+        await page.locator('#raw-settings-toggle').click();
+      }
       for (let i = -warmups; i < count; i++) {
         if (id === 'sdr_match') await restoreGrade(page, bypassed, rendition, zoom);
-        await sample(target, d, i < 0);
+        const before = d.unchangedRaw ? await signature(page, true) : null;
+        const preflight = '**/api/session/*/raw-apply-reuse';
+        const refuse = route => route.fulfill({ json: { session: null } });
+        if (d.forceRawFull) await page.route(preflight, refuse);
+        try {
+          const measured = await sample(target, d, i < 0);
+          if (d.unchangedRaw && (await signature(page, true) !== before
+            || measured.rawImports !== Number(Boolean(d.forceRawFull)) || measured.retainedPicture === Boolean(d.forceRawFull))) {
+            throw Error(`${target.step} did not keep identical pixels on the expected import route`);
+          }
+        } finally {
+          if (d.forceRawFull) await page.unroute(preflight, refuse);
+        }
         await restoreGrade(page, seeded, rendition, zoom);
       }
     }

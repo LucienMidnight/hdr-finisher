@@ -84,7 +84,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/grade-background-pause.test.js | Grade resumes when a canvas tool consumes pointerup | 8 | 0.019 | unknown |  |
 | tests/grade-library-pictures.test.js | publication starts after saving, defers capture, and preserves release timing | 11 | 0.035 | unknown |  |
 | tests/grade-module-collapse.test.js | opening a photo closes modules and RAW settings without changing adjustments | 1 | 0.0022 | unknown |  |
-| tests/grade-open-loading.test.js | Grade loads immediately with an empty preview and locked controls, then returns to Library on failure | 15 | 0.3822 | unknown |  |
+| tests/grade-open-loading.test.js | Grade loads immediately with an empty preview and locked controls, then returns to Library on failure | 17 | 0.3822 | unknown |  |
 | tests/grade-opening.test.js | a failed http presentation POST retries without another picture and success is idempotent | 5 | 0.0094 | unknown |  |
 | tests/grade-panel-order.test.js | both lanes interleave the same live sections without losing their identity or fold state | 3 | 0.0093 | unknown |  |
 | tests/grade-paste.test.js | paste selection preserves partial choices and inactive lane values | 18 | 0.036 | unknown |  |
@@ -300,7 +300,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/test_gpu_delivery.py | Fast broker checks; the Electron driver checks real decoded GPU pixels. | 39 | 11.1933 | unknown |  |
 | tests/test_gpu_mask_bitmap_verdict.py | Checks gpu mask bitmap verdict behavior and regression contracts. | 2 | 0.066 | unknown |  |
 | tests/test_graceful_grades.py | Result checks for damaged and future saved grades. All files are disposable. | 45 | 3.3949 | unknown |  |
-| tests/test_grade_open_reuse.py | Fast source identity and single-decode checks using disposable pixels. | 5 | 1.1631 | unknown |  |
+| tests/test_grade_open_reuse.py | Fast source identity and single-decode checks using disposable pixels. | 6 | 1.1631 | unknown |  |
 | tests/test_grade_sweep_summary.py | Release reporting distinguishes frame noise and cancelled work from failures. | 2 | 0.0016 | unknown |  |
 | tests/test_grain_work.py | Cancellation and exact grain output from baseline 88775059. | 13 | 6.0651 | unknown | Conditional skip: cpu_budget.logical_cpus() < 2; pytest.skip("Multiple CPU workers are needed") |
 | tests/test_hdr_ceiling.py | Decoded HDR target enforcement and local correction. | 94 | 502.9115 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; Conditional skip: not (resolve_binary('avifgainmaputil') and resolve_binary('avifdec')); pytest.skip("Bundled AVIF gain-map tools are unavailable."); pytest.skip(backend.capability.detail) |

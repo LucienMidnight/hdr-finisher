@@ -788,7 +788,7 @@
       "suite": "node",
       "area": "grade",
       "purpose": "Grade loads immediately with an empty preview and locked controls, then returns to Library on failure",
-      "test_count": 15,
+      "test_count": 17,
       "seconds": {
         "windows": 0.3822,
         "mac": null
@@ -4102,7 +4102,7 @@
       "suite": "python",
       "area": "grade",
       "purpose": "Fast source identity and single-decode checks using disposable pixels.",
-      "test_count": 5,
+      "test_count": 6,
       "seconds": {
         "windows": 1.1631,
         "mac": null

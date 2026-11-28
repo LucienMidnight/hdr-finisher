@@ -131,3 +131,132 @@ def test_file_hash_and_decode_overlap_without_another_image(tmp_path, monkeypatc
     session = store.prepare_session(photo)
     assert session.source_fingerprint_sha256 == real_hash(photo)
     store.clear()
+
+
+def test_unchanged_raw_apply_retains_pixels_preparation_and_save_state(tmp_path, monkeypatch):
+    import lensfunpy
+    from types import SimpleNamespace
+    from fastapi.testclient import TestClient
+    from hdr_finisher import main, raw_import, sessions
+    from hdr_finisher.desktop_security import DesktopPathGrants
+
+    # Exercise import/session ownership without a large or platform-specific RAW.
+    photo = tmp_path / 'sensor.ARW'
+    Image.fromarray(np.random.default_rng(16).integers(1, 240, (48, 64, 3), dtype=np.uint8)).save(photo, format='PNG')
+    bundle = tmp_path / 'db_files'
+    bundle.mkdir()
+    xml = bundle / 'calibrations.xml'
+    xml.write_bytes(b'calibration1')
+    monkeypatch.setattr(lensfunpy, '__file__', str(tmp_path / '__init__.py'))
+    bundle_identity = raw_import._read_lens_database_identity()
+    loaded_db = SimpleNamespace(has_common_profiles=False)
+    fresh_db = SimpleNamespace(has_common_profiles=False)
+    monkeypatch.setattr(raw_import, '_lens_database_identity', lambda: bundle_identity)
+    monkeypatch.setattr(raw_import, '_lens_database', lambda: loaded_db)
+    monkeypatch.setattr(raw_import, 'native_lens_database', lambda *, load_bundled: fresh_db)
+
+    real_load = sessions.load_image
+    decodes = []
+    def load(path, **kwargs):
+        decodes.append(kwargs['raw_import_settings'])
+        png = tmp_path / 'decode.png'
+        png.write_bytes(path.read_bytes())
+        image, source, metadata, analysis, sdr = real_load(png, **kwargs)
+        source.suffix = '.arw'
+        metadata['lens_correction'] = {
+            'applied': True, 'profile': {'id': 'resolved profile'}, 'database_version': bundle_identity,
+        }
+        return image, source, metadata, analysis, sdr
+    monkeypatch.setattr(sessions, 'load_image', load)
+
+    store, legacy = SessionStore(), SessionStore()
+    manager = ImportJobManager(store, MediaBrowserStore(tmp_path / 'app'))
+    grants = DesktopPathGrants()
+    monkeypatch.setattr(main, 'store', store)
+    monkeypatch.setattr(main, 'import_jobs', manager)
+    monkeypatch.setattr(main, 'desktop_path_grants', grants)
+    client = TestClient(main.app)
+    settings = RawImportSettings()
+    observed = []
+    store.grade_recovery_observer = lambda session: observed.append(session.edit_state())
+    # A stored Auto grade carries resolved provenance. The Apply form does not.
+    saved = settings.model_copy(deep=True)
+    saved.lens.profile_id, saved.lens.database_version = 'resolved profile', bundle_identity
+    try:
+        initial = store.create_session(photo, raw_import_settings=saved)
+        session = store.get(initial.session_id)
+        image, cache = session.image, session.render_cache
+        preview, _ = cache.source_pair(32)
+        url = f'/api/session/{initial.session_id}/raw-apply-reuse'
+
+        def apply(requested=settings, revision=None, grant=None):
+            grant = grant or grants.issue(str(photo), 'source-open')[0]
+            result = client.post(url, json={'grant': grant, 'raw_import_settings': requested.model_dump(mode='json'),
+                                            'expected_revision': session.edit_revision if revision is None else revision})
+            assert result.status_code == 200, result.text
+            return result.json()['session']
+
+        grant, _ = grants.issue(str(photo), 'source-open')
+        accepted = apply(grant=grant)
+        assert len(decodes) == 1
+        assert accepted['dirty'] and accepted['edit_revision'] == initial.edit_revision + 1
+        assert store.get(initial.session_id) is session and session.image is image and session.render_cache is cache
+        assert observed[0].dirty and observed[0].revision == accepted['edit_revision']
+        assert apply(grant=grant) is None
+        assert apply(revision=initial.edit_revision) is None
+
+        original = legacy.create_session(photo, raw_import_settings=saved)
+        full = legacy.redevelop_session(original.session_id, legacy.prepare_session(photo, raw_import_settings=settings))
+        assert full.edit_document == session.edit_document()
+        assert full.dirty == accepted['dirty'] and full.edit_revision == accepted['edit_revision']
+        assert full.can_undo == accepted['can_undo'] and full.can_redo == accepted['can_redo']
+        rebuilt = legacy.get(original.session_id)
+        np.testing.assert_array_equal(rebuilt.image, image)
+        np.testing.assert_array_equal(rebuilt.render_cache.source_pair(32)[0], preview)
+
+        for group, changes in {
+            'pixel_cleanup': {'remove_hot_pixels': False, 'even_out_specks': False, 'speck_threshold': 3.1},
+            'highlight_reconstruction': {'enabled': False, 'method': 'edge_colour_v1',
+                                         'clipping_threshold': .9, 'edge_colour_expand_percent': 1.0},
+            'lens': {'mode': 'off', 'distortion': False, 'chromatic_aberration': False, 'vignetting': False,
+                     'focal_length_mm': 65, 'aperture': 2, 'focus_distance_m': 4},
+        }.items():
+            for control, value in changes.items():
+                changed = settings.model_copy(deep=True)
+                setattr(getattr(changed, group), control, value)
+                assert apply(changed) is None, (group, control)
+        xml.write_bytes(b'calibration2')
+        assert apply() is None
+        xml.write_bytes(b'calibration1')
+        fresh_db.has_common_profiles = True
+        assert apply() is None
+        fresh_db.has_common_profiles = False
+        loaded_db.has_common_profiles = True
+        assert apply() is None
+        loaded_db.has_common_profiles = False
+        assert session.edit_revision == accepted['edit_revision'] and len(observed) == 1
+
+        # Even an identical replacement at the same path needs the normal
+        # route. The preflight must not spend the grant intended for that job.
+        replacement = tmp_path / 'replacement.ARW'
+        replacement.write_bytes(photo.read_bytes())
+        replacement.replace(photo)
+        grant, _ = grants.issue(str(photo), 'source-open')
+        assert apply(grant=grant) is None
+        before = len(decodes)
+        response = client.post('/api/import-jobs', json={
+            'grant': grant, 'replace_session_id': initial.session_id,
+            'raw_import_settings': settings.model_dump(mode='json'),
+        })
+        assert response.status_code == 202, response.text
+        job = manager.get(response.json()['job_id'])
+        deadline = monotonic() + 10
+        while job.state not in {'ready', 'error', 'cancelled'} and monotonic() < deadline:
+            sleep(.01)
+        assert job.state == 'ready', job.error
+        assert len(decodes) == before + 1
+        assert store.get(initial.session_id) is not session
+    finally:
+        manager.close()
+        store.clear()
+        legacy.clear()
