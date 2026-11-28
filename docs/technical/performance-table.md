@@ -1,3 +1,27 @@
+## November 28, 2026 — Mac Grade module audit, before and after the cleanup sprint
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794, mains power, GPU lock, nothing else running.
+Driver `tests/performance/grade-module-impact.js` (five samples, two warmups). Baseline at
+`cd664192`. After: Fit at `a6df0067`, Denoise re-check and 100% at `f68540d5`. Typical photo
+is IMG_7723.CR3 (24 MP); large is DSC00636.ARW (50 MP). Medians. "First" means the first
+picture still current at the next frame (see the measurement note in
+`docs/technical/audits/2026-11-28-mac-after/README.md`). Data:
+`docs/technical/audits/2026-11-28-mac/` and `docs/technical/audits/2026-11-28-mac-after/`.
+
+| Action | Before | After | Conditions |
+| --- | --- | --- | --- |
+| Exposure drag with Film on, typical Fit | first 3.09 s, settle 1.32 s | first 1.00 s, settle 0.76 s | Portra 400, Black Pro-Mist, Halation, Grain. Film off: first 0.05 s. Still about 1 s over Steve's 100–200 ms aim; see the Film research in the sprint brief. |
+| Exposure drag with Film on, large Fit | first 1.89 s, settle 0.92 s | first 1.45 s, settle 0.78 s | Same recipe |
+| Film own sliders, typical Fit | settle 0.63–0.65 s | settle 0.55–0.60 s | Look strength, Lens, Halation, Grain, Print contrast |
+| Exposure drag with Highlight Compression (Peak Fit Maximum), typical / large Fit | settle 0.39 / 0.44 s | settle 0.30 / 0.32 s | O4 |
+| Denoise back on, typical Fit | 0.05 s | 0.06 s | The O2-1 memory fix made this 3.2 s (Micro Grain 7.1 s) at `a6df0067`; `f68540d5` keeps the bypassed picture |
+| Highest memory during the 100% large run | 4.34 GB footprint, 3.14 GB GPU process | 3.63 GB footprint, 1.77 GB GPU process | Denoise, Film, Detail, Local and Geometry at 100%. Before, it exceeded the 4,000 MB Mac ceiling |
+| Micro Grain on at 100%, large | settle 7.95 s | settle 1.34 s | |
+| Clean Grain Amount drag at 100%, large | settle 0.71 s | settle 0.17 s | |
+| Exposure drag with Film on at 100%, large | first 7.24 s, settle 4.80 s | first 4.58 s, settle 1.90 s | |
+| Unchanged RAW Apply, Sony _DSC7970.ARW 42 MP | 5.57 s | 0.33 s | O3; changed RAW controls still do the full work |
+| Black Pro-Mist GPU time, quick lens fixture 1520 px HDR / SDR | 2.59 / 1.81 s | 0.78 / 0.59 s | O1, pixel-identical |
+
 ## November 28, 2026 — Mac Library fallback for a source too large for the GPU
 
 MacBook Neo, A18 Pro, 8 GB, 1408×794, v0.9.4 plus the change in this commit.
