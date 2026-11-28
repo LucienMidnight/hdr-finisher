@@ -95,7 +95,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/grain-route.test.js | the help line appears only when the slower CPU route is used or the method cannot run | 21 | 0.7219 | unknown |  |
 | tests/grain-work.test.js | CPU reason distinguishes eligibility and actual renderer refusal | 5 | 0.0125 | unknown |  |
 | tests/graph-scale.test.js | the declared contract names every module the sprint asks about | 16 | 0.0075 | unknown |  |
-| tests/highlight-anchor.test.js | a measurement on the denoised source is not reused for the original, or for another reconstruction | 11 | 0.0078 | unknown |  |
+| tests/highlight-anchor.test.js | a measurement on the denoised source is not reused for the original, or for another reconstruction | 14 | 0.0078 | unknown |  |
 | tests/highlight-delivery-floor.test.js | peak input and pasted state keep HDR headroom at 100-nit white | 3 | 0.004 | unknown |  |
 | tests/hsl-packing.test.js | HSL packs every bounded channel and range without touching existing slots | 4 | 0.007 | unknown |  |
 | tests/hsl-picker.test.js | HSL picks visible image coordinates in CSS points at 1x, including pan | 10 | 0.0257 | unknown |  |

@@ -680,10 +680,19 @@
           if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
           transferredBytes += data.byteLength;
           chunkCount += 1;
-          await copyChunkStaged(renderer, stagingRing, retiredStaging, slot, data, {
-            bytesPerRow, rows: chunk.height, width: chunk.width, texture, stagingCapacity: strip?.chunkBytes,
-            origin: { x: chunk.x - delivered.x, y: chunk.y - delivered.y },
-          });
+          const origin = { x: chunk.x - delivered.x, y: chunk.y - delivered.y };
+          if (options.peakPatchUpload && chunkTotal === 1 && data.byteLength <= 256 * 1024) {
+            // A small standalone patch already fits in one upload. Queue the
+            // same bytes directly so its render need not wait for a staging
+            // map and queue drain. Larger patches keep the bounded ring.
+            assertCurrent("Peak source patch was superseded");
+            renderer.device.queue.writeTexture({ texture, origin }, data,
+              { bytesPerRow, rowsPerImage: chunk.height }, { width: chunk.width, height: chunk.height });
+          } else {
+            await copyChunkStaged(renderer, stagingRing, retiredStaging, slot, data, {
+              bytesPerRow, rows: chunk.height, width: chunk.width, texture, stagingCapacity: strip?.chunkBytes, origin,
+            });
+          }
           assertCurrent("ROI source region stream was superseded");
         }
       };

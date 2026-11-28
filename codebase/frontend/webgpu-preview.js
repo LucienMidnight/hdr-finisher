@@ -934,6 +934,7 @@
       this.releaseHslSelection();
       this.denoiseModelWarm = null;
       this.editingCandidateCache?.clear();
+      this.lastNativeHighlightPeak = null;
       this.editingAnalysisCanvas = null;
       this.highlightAnchorCanvas = null;
       this.analysisClarityFrameMap = null;
@@ -1487,7 +1488,7 @@
      * operations. The returned bounded native patches evaluate those stages
      * on real neighbours; the candidate atlas never invents their input.
      */
-    async rankEditingPeakCandidates(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, isCurrent, signal) {
+    async rankEditingPeakCandidates(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, isCurrent, signal, reuseHighlight = false) {
       if (lane === "sdr" && adjustments.sdr.linked_to_hdr) {
         locals = locals.map(local => ({ ...local, sdr_grade: local.hdr_grade }));
       }
@@ -1507,6 +1508,17 @@
         if (!evidence.samples?.length || evidence.samples.length > 16384) throw new Error("Bounded peak evidence is unavailable");
         this.editingCandidateCache.set(evidenceKey, evidence);
         while (this.editingCandidateCache.size > 4) this.editingCandidateCache.delete(this.editingCandidateCache.keys().next().value);
+      }
+      const params = buildParams(lane, adjustments, evidence.working_space, lane === "hdr", white, 1);
+      const origin = { sessionId, geometrySignature: signature, sourceIdentity: "source", identity: evidenceKey,
+        sourceEpoch: evidence.source_epoch };
+      const anchor = this.highlightAnchorRequest(lane, adjustments, origin, params, locals);
+      const reuseKey = anchor && reuseHighlight && lane === "hdr"
+        ? this.nativeHighlightReuseKey(adjustments, origin, params, locals) : null;
+      const previous = this.lastNativeHighlightPeak;
+      if (reuseKey && previous?.key === reuseKey
+        && this.peakReductionCache.get(previous.result.highlightAnchor.key) === previous.result.highlightAnchor.value) {
+        return { anchor, reuseKey, reused: previous.result };
       }
       const side = 128;
       const rgb = new Float32Array(side * side * 4);
@@ -1534,8 +1546,6 @@
         this.device.queue.writeTexture({ texture: positions }, positionHalf, { bytesPerRow: side * 8 }, [side, side]);
         const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC;
         const a = texture("rgba16float", usage), b = texture("rgba16float", usage);
-        const params = buildParams(lane, adjustments, evidence.working_space, lane === "hdr", white, 1);
-        const anchor = this.highlightAnchorRequest(lane, adjustments, { sessionId, geometrySignature: signature, sourceIdentity: "source", identity: evidenceKey }, params, locals);
         // Rank upstream of the shoulder; native patches evaluate all later
         // neighbourhood stages. Unrelated atlas neighbours never feed Detail.
         params[GPU_PARAMS.HIGHLIGHT_MODE] = 0;
@@ -1589,7 +1599,7 @@
           seen.add(key); patches.push({x, y, width: Math.min(128, evidence.width - x), height: Math.min(128, evidence.height - y)});
           if (patches.length === 16) break;
         }
-        return { ...evidence, samples: undefined, patches, anchor };
+        return { ...evidence, samples: undefined, patches, anchor, reuseKey };
       } finally {
         textures.forEach(item => item.destroy()); buffers.forEach(item => item.destroy());
       }
@@ -1632,8 +1642,21 @@
           if (this.highlightAnchorInflight === work) this.highlightAnchorInflight = null;
         }
       }
-      const ranked = await this.rankEditingPeakCandidates(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, isCurrent, options.signal);
-      if (!ranked || !isCurrent()) return null;
+      const device = this.device;
+      const generation = this.resourceGeneration;
+      const current = () => isCurrent() && !options.signal?.aborted
+        && device === this.device && generation === this.resourceGeneration;
+      if (!current()) return null;
+      const ranked = await this.rankEditingPeakCandidates(sessionId, lane, adjustments, curveSampler, locals,
+        revision, white, sourceSize, current, options.signal, options.highlightAnchorOnly && !options.identity);
+      if (!ranked || !current()) return null;
+      if (ranked.reused) {
+        const value = ranked.reused.highlightAnchor.value;
+        this.cachePeakReduction(ranked.anchor.key, value);
+        const result = { ...ranked.reused, highlightAnchor: { key: ranked.anchor.key, value } };
+        this.lastNativeHighlightPeak = { key: ranked.reuseKey, result };
+        return result;
+      }
       const signature = JSON.stringify(adjustments.shared?.geometry || {});
       const frame = {width: ranked.width, height: ranked.height,
         longEdge: Math.max(sourceSize.width, sourceSize.height), workingSpace: ranked.working_space};
@@ -1657,7 +1680,7 @@
         const surround = clarity
           ? await this.measurementClaritySurround(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, options)
           : null;
-        if (!isCurrent()) return null;
+        if (!current()) return null;
         if (surround) analysis = {...analysis, claritySurround: surround};
         if (!bound()) {
           analysis = {...analysis, analysisNativeLuma: false};
@@ -1665,30 +1688,69 @@
         }
       }
       let peak = 0, rendered = 0;
-      for (const patch of ranked.patches) {
-        if (!isCurrent()) return null;
-        const x = Math.max(0, patch.x - halo), y = Math.max(0, patch.y - halo);
-        const region = {x, y, width: Math.min(frame.width, patch.x + patch.width + halo)-x, height: Math.min(frame.height, patch.y + patch.height + halo)-y};
-        let result;
-        try {
-          result = await this.renderTiledTo(canvas, sessionId, lane, adjustments, curveSampler, Math.max(sourceSize.width,sourceSize.height), locals, revision, null, white, sourceSize, {
-            ...options, measureOnly: true, tileSize: 128, analysisPatch: patch, analysisRegion: region, analysisMasks: true,
-            ...analysis,
-          });
-        } finally {
-          const key = `${sessionId}:${lane}:${Math.max(sourceSize.width,sourceSize.height)}:${signature}:${options.identity || "source"}:analysis:${JSON.stringify(region)}`;
-          this.evictGpuCacheEntry("source-proxy", key);
+      // Neutral-paper patches already reduce into float32. Copy each patch's
+      // unchanged result into its own slot and map them together, rather than
+      // fencing the GPU between patches. Still check and combine them on CPU.
+      const peakReadback = options.highlightAnchorOnly && adjustments[lane].film_look?.film_stock === "none"
+        && ranked.patches.length ? device.createBuffer({
+          size: ranked.patches.length * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+        }) : null;
+      try {
+        for (const patch of ranked.patches) {
+          if (!current()) return null;
+          const x = Math.max(0, patch.x - halo), y = Math.max(0, patch.y - halo);
+          const region = {x, y, width: Math.min(frame.width, patch.x + patch.width + halo)-x, height: Math.min(frame.height, patch.y + patch.height + halo)-y};
+          let result;
+          try {
+            result = await this.renderTiledTo(canvas, sessionId, lane, adjustments, curveSampler, Math.max(sourceSize.width,sourceSize.height), locals, revision, null, white, sourceSize, {
+              ...options, isCurrent: current, measureOnly: true, tileSize: 128,
+              analysisPatch: patch, analysisRegion: region, analysisMasks: true,
+              peakReadback: peakReadback ? { buffer: peakReadback, offset: rendered * 4 } : null,
+              ...analysis,
+            });
+          } finally {
+            const key = `${sessionId}:${lane}:${Math.max(sourceSize.width,sourceSize.height)}:${signature}:${options.identity || "source"}:analysis:${JSON.stringify(region)}`;
+            this.evictGpuCacheEntry("source-proxy", key);
+          }
+          if (!current()) return null;
+          if (!result?.rendered) return result;
+          if (!peakReadback) {
+            if (!Number.isFinite(result.metrics?.exactPeak)) return result;
+            peak = Math.max(peak, result.metrics.exactPeak);
+          }
+          rendered++;
         }
-        if (!result?.rendered || !Number.isFinite(result.metrics?.exactPeak)) return result;
-        peak = Math.max(peak, result.metrics.exactPeak); rendered++;
+        if (peakReadback) {
+          if (!current()) return null;
+          await peakReadback.mapAsync(GPUMapMode.READ);
+          if (!current()) return null;
+          for (const measured of new Float32Array(peakReadback.getMappedRange())) {
+            if (!Number.isFinite(measured)) return null;
+            peak = Math.max(peak, measured);
+          }
+        }
+        const result = {rendered:true, metrics:{exactPeak:peak, exactPeakLongEdge:Math.max(frame.width,frame.height), tileCount:rendered, processedBound, bounded:true,
+          claritySurround: Boolean(analysis.claritySurround), nativeLumaMasks: analysis.analysisNativeLuma}};
+        if (options.highlightAnchorOnly && ranked.anchor) {
+          this.cachePeakReduction(ranked.anchor.key, peak);
+          result.highlightAnchor = {key:ranked.anchor.key, value:peak};
+          if (ranked.reuseKey) this.lastNativeHighlightPeak = { key: ranked.reuseKey, result };
+        }
+        return result;
+      } finally {
+        if (peakReadback?.mapState === "mapped") peakReadback.unmap();
+        peakReadback?.destroy();
       }
-      const result = {rendered:true, metrics:{exactPeak:peak, exactPeakLongEdge:Math.max(frame.width,frame.height), tileCount:rendered, processedBound, bounded:true,
-        claritySurround: Boolean(analysis.claritySurround), nativeLumaMasks: analysis.analysisNativeLuma}};
-      if (options.highlightAnchorOnly && ranked.anchor) {
-        this.cachePeakReduction(ranked.anchor.key, peak);
-        result.highlightAnchor = {key:ranked.anchor.key, value:peak};
-      }
-      return result;
+    }
+
+    nativeHighlightReuseKey(adjustments, origin, params, locals) {
+      // Both controls run after the native patches' measured signal. Keep
+      // Target (Tone Whites reads it upstream), colour handling and all other
+      // source/grade inputs. Do not change the display request key or the
+      // carried anchor, so provisional frames and measurement reporting agree.
+      const hdr = { ...adjustments.hdr, highlight_compression_start_nits: undefined, highlight_compression_peak_detail: undefined };
+      return JSON.stringify([this.resourceGeneration, origin.sourceEpoch, adjustments.shared,
+        params[GPU_PARAMS.PROJECT_REFERENCE_WHITE_NITS], this.highlightAnchorRequest("hdr", { ...adjustments, hdr }, origin, params, locals).key]);
     }
 
     highlightAnchorRequest(lane, adjustments, proxy, params, locals = []) {
@@ -2719,7 +2781,7 @@
       let proxy = sourceOptions?.analysisPatch
         ? await this.loadProxyRegion(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity,
           `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}:analysis:${JSON.stringify(region)}`, region,
-          {isCurrent: sourceOptions?.isCurrent, signal: requestSignal})
+          {isCurrent: sourceOptions?.isCurrent, signal: requestSignal, peakPatchUpload: sourceOptions?.highlightAnchorOnly})
         : await this.loadProxy(
         sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity,
         { isCurrent: sourceOptions?.isCurrent, onProgress: sourceOptions?.onSourceProgress, region },
@@ -2783,6 +2845,7 @@
         beforeDeliverySubmit: sourceOptions?.beforeDeliverySubmit,
         tileBatchSize: sourceOptions?.tileBatchSize,
         analysisPatch: sourceOptions?.analysisPatch,
+        peakReadback: sourceOptions?.peakReadback,
         lensGlowRecipe: adjustments,
         neutralPaperAnchor: highlightAnchorOnly && adjustments[lane].film_look.film_stock === "none",
         analysisMasks: sourceOptions?.analysisMasks,
@@ -4722,10 +4785,11 @@
       // Neutral's ideal paper may exceed half-float before the HDR shoulder.
       // Keep its anchor maximum in the existing float32 reduction buffer.
       const floatPeak = options.neutralPaperAnchor === true;
+      const sharedPeakReadback = floatPeak ? options.peakReadback : null;
       const floatPeakPipeline = floatPeak ? await this.ensurePeakReductionPipeline("scaledFilmPeakReductionMain") : null;
       const peakBytes = (1 + PEAK_HISTOGRAM_BINS) * 4;
       const floatPeakResult = floatPeak ? this.device.createBuffer({size:peakBytes,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.COPY_SRC}) : null;
-      const floatPeakRead = floatPeak ? this.device.createBuffer({size:4,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ}) : null;
+      const floatPeakRead = floatPeak && !sharedPeakReadback ? this.device.createBuffer({size:4,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ}) : null;
       if (floatPeak) {
         this.device.queue.writeBuffer(floatPeakResult,0,new Uint32Array(1+PEAK_HISTOGRAM_BINS));
         localBuffers.push({buffer:floatPeakResult});
@@ -5327,7 +5391,8 @@
           { width: peakTarget.size, height: peakTarget.size },
         );
       }
-      if (floatPeak) encoder.copyBufferToBuffer(floatPeakResult,0,floatPeakRead,0,4);
+      if (floatPeak) encoder.copyBufferToBuffer(floatPeakResult, 0,
+        sharedPeakReadback?.buffer || floatPeakRead, sharedPeakReadback?.offset ?? 0, 4);
       submissions += 1;
       this.device.queue.submit([encoder.finish()]);
       if (presentationTarget && options.gradeMemory) this.noteGradeCanvasSwap(canvas, surface.format);
@@ -5409,7 +5474,7 @@
       // has no fresh grid to measure, so it leaves the previous peak alone
       // rather than attributing a stale maximum to the current generation.
       let measuredPeak = null;
-      if (floatPeak) {
+      if (floatPeakRead) {
         try {
           await floatPeakRead.mapAsync(GPUMapMode.READ);
           measuredPeak = new Float32Array(floatPeakRead.getMappedRange())[0];

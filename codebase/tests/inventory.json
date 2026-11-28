@@ -942,7 +942,7 @@
       "suite": "node",
       "area": "highlight",
       "purpose": "a measurement on the denoised source is not reused for the original, or for another reconstruction",
-      "test_count": 11,
+      "test_count": 14,
       "seconds": {
         "windows": 0.0078,
         "mac": null
