@@ -1,7 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
-function setup({stale=false,beforeResponse=async()=>{}}={}){
-  const writes=[],requests=[],initializations=[];
-  const gpu={configureSurface:()=>({format:'bgra8unorm'}),device:{queue:{writeTexture:(_dst,body)=>writes.push([...body]),onSubmittedWorkDone:async()=>{}}}};
+function setup({stale=false,beforeResponse=async()=>{},surfaceFormat='bgra8unorm'}={}){
+  const writes=[],requests=[],initializations=[],released=[];
+  const gpu={configureSurface:()=>({format:surfaceFormat}),device:{queue:{writeTexture:(_dst,body)=>writes.push([...body]),onSubmittedWorkDone:async()=>{}}}};
   const context={HDRLibraryQuery:require('../frontend/library-query.js'),navigator:{gpu:{getPreferredCanvasFormat:()=>"bgra8unorm"}},console,performance,URLSearchParams,TextDecoder,TextEncoder,DataView,Uint8Array,DOMException,queueMicrotask,
     HDRLibraryPictures:{initialize:async()=>{initializations.push(true);return gpu;}},HDRLibraryStopwatch:()=>{},
     fetch:async(url,options)=>{
@@ -13,9 +13,9 @@ function setup({stale=false,beforeResponse=async()=>{}}={}){
       return {ok:true,arrayBuffer:async()=>body.buffer};
     }};
   context.window=context;vm.createContext(context);vm.runInContext(fs.readFileSync('frontend/library-finished-thumbnails.js','utf8'),context);
-  const canvas=()=>({dataset:{},getContext:()=>({getCurrentTexture:()=>({})})});
+  const canvas=()=>({dataset:{},getContext:()=>({getCurrentTexture:()=>({}),unconfigure:()=>released.push(true)})});
   const load=(path,options={})=>{const target=canvas();return {target,promise:context.HDRLibraryFinishedThumbnails.load({path,type:options.type,edited:options.edited,bytes:12,mtime_ns:100,grade_identity:'grade'},target,options.signal||new AbortController().signal,options.current||(()=>true),options.hdr||false)}};
-  return {load,writes,requests,initializations};
+  return {load,writes,requests,initializations,released};
 }
 test('visible stored surfaces share one request and upload the original exact bytes',async()=>{
   const s=setup(),a=s.load('a'),b=s.load('b');
@@ -26,6 +26,11 @@ test('visible stored surfaces share one request and upload the original exact by
 });
 test('a known changed grade cannot upload an old finished surface',async()=>{
   const s=setup({stale:true});assert.equal(await s.load('a').promise,null);assert.deepEqual(s.writes,[]);
+});
+test('an incompatible canvas format releases the surface without uploading',async()=>{
+  const s=setup({surfaceFormat:'rgba16float'}),item=s.load('a');
+  assert.equal(await item.promise,null);assert.deepEqual(s.writes,[]);
+  assert.equal(s.released.length,1);assert.deepEqual([item.target.width,item.target.height],[0,0]);
 });
 test('an abandoned cell cannot publish a cached surface',async()=>{
   const s=setup(),a=s.load('a',{current:()=>false});

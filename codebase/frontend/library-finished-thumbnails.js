@@ -86,7 +86,12 @@ window.HDRLibraryFinishedThumbnails = (() => {
     if(info.identity.bytes!==photo.bytes||String(info.identity.mtime_ns)!==String(photo.mtime_ns)||info.identity.grade!==photo.grade_identity){HDRLibraryStopwatch("grade_thumbnail_mismatch",{path:photo.path,reason:JSON.stringify({stored:info.identity,expected:{bytes:photo.bytes,mtime_ns:photo.mtime_ns,grade:photo.grade_identity}})});return null;}
     canvas.width=info.width;canvas.height=info.height;
     const context=canvas.getContext('webgpu');
-    if(gpu.configureSurface(canvas,context,hdr).format!==info.identity.format)return null;
+    if(gpu.configureSurface(canvas,context,hdr).format!==info.identity.format){
+      // The caller discards this canvas on a miss. Release the configured
+      // backing now instead of leaving it to detached-canvas collection.
+      context.unconfigure();canvas.width=canvas.height=0;
+      return null;
+    }
     const texture=context.getCurrentTexture();
     gpu.device.queue.writeTexture({texture},body,{bytesPerRow:info.stride,rowsPerImage:info.height},[info.width,info.height]);
     await gpu.device.queue.onSubmittedWorkDone();
