@@ -144,7 +144,7 @@ var<workgroup> sums:array<u32,256>;
  }
 }`;
   const histogramPipelines=new WeakMap();
-  async function gpuVariance(device, stats, length, make, read, rules) {
+  async function gpuVariance(device, stats, length, make, read, rules, destroy) {
     await warm(device);
     const pipes=await histogramPipelines.get(device);
     let thresholds=Array(25).fill(0), last, population, positiveCount;
@@ -179,7 +179,7 @@ var<workgroup> sums:array<u32,256>;
           return high&&low===high?new Float32Array(new Uint32Array([low]).buffer)[0]:last[i*4];}));
       }
       if(mode===1){population=Array.from({length:12},(_,i)=>last[i*4+1]);thresholds.splice(13,12,...Array.from({length:12},(_,i)=>last[i*4]));}
-      hist.destroy();input.destroy();output.destroy();params.destroy();
+      destroy(hist);destroy(input);destroy(output);destroy(params);
     }
     const xs=[],vs=[],ws=[],observations=[];
     for(let i=0;i<12;i++){
@@ -190,14 +190,27 @@ var<workgroup> sums:array<u32,256>;
     }
     return {legacy:xs.length>=2?fit(xs,vs,ws):{a:0,b:vs[0]||1e-8,c:0},informative:fitInformative(observations,rules)};
   }
-  async function measure(device, description, pixels, budget=512*1024**2) {
+  async function measure(device, description, pixels, budget=512*1024**2, onBytesChanged) {
     const start=performance.now(), {width:w,height:h,windows}=description, count=windows.length;
     const rules=description.calibration;
     if(description.version!==VERSION||!rules)throw Error("Stale Denoise measurement source.");
     const size=w*h*count*16, required=size*8+8*1024**2;
     if(required>budget||size>device.limits.maxStorageBufferBindingSize)throw Error("Denoise measurement exceeds available GPU memory.");
-    const pipe=await pipeline(device), owned=[];
-    const make=(bytes,usage=GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.COPY_SRC)=>{const b=device.createBuffer({size:Math.max(16,bytes),usage});owned.push(b);return b;};
+    const pipe=await pipeline(device), owned=new Map();
+    let liveBytes=0;
+    const make=(bytes,usage=GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.COPY_SRC)=>{
+      const size=Math.max(16,bytes), buffer=device.createBuffer({size,usage});
+      owned.set(buffer,size);liveBytes+=size;onBytesChanged?.(liveBytes);
+      return buffer;
+    };
+    const destroy=buffer=>{
+      const size=owned.get(buffer);
+      if(size===undefined)return;
+      owned.delete(buffer);
+      buffer.destroy();
+      liveBytes-=size;
+      onBytesChanged?.(liveBytes);
+    };
     device.pushErrorScope("out-of-memory");device.pushErrorScope("validation");
     try {
       const input=make(size), original=make(size), current=make(size), smooth=make(size), temp=make(size), band=make(size), energy=make(size), sigma=make(size);
@@ -210,7 +223,7 @@ var<workgroup> sums:array<u32,256>;
         const group=device.createBindGroup({layout:pipe.getBindGroupLayout(0),entries:[src,other,dst,params,flags].map((buffer,binding)=>({binding,resource:{buffer}}))});
         const encoder=device.createCommandEncoder(), pass=encoder.beginComputePass();pass.setPipeline(pipe);pass.setBindGroup(0,group);pass.dispatchWorkgroups(Math.ceil(length/128));pass.end();device.queue.submit([encoder.finish()]);
       };
-      const read=async(buffer,bytes)=>{const staging=make(bytes,GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST);const enc=device.createCommandEncoder();enc.copyBufferToBuffer(buffer,0,staging,0,bytes);device.queue.submit([enc.finish()]);await staging.mapAsync(GPUMapMode.READ);const result=new Float32Array(staging.getMappedRange().slice(0));staging.unmap();staging.destroy();return result;};
+      const read=async(buffer,bytes)=>{const staging=make(bytes,GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST);const enc=device.createCommandEncoder();enc.copyBufferToBuffer(buffer,0,staging,0,bytes);device.queue.submit([enc.finish()]);await staging.mapAsync(GPUMapMode.READ);const result=new Float32Array(staging.getMappedRange().slice(0));staging.unmap();destroy(staging);return result;};
       const sample=async(buffer,limit=16384)=>{const stride=Math.max(1,Math.ceil(w*h*count/limit)), length=Math.ceil(w*h*count/stride);dispatch(5,buffer,temp,buffer,{stride},length);return read(temp,length*16);};
       const blur=(src,dst,step)=>{dispatch(1,src,temp,src,{step,axis:0});dispatch(1,temp,dst,temp,{step,axis:1});};
       dispatch(0,input,original);
@@ -218,7 +231,7 @@ var<workgroup> sums:array<u32,256>;
       dispatch(3,original,band,original,{extra:rules.zero_relative});dispatch(4,band,energy);
       dispatch(13,energy,band,energy,{},blockCount);
       const zeroStats=await read(band,blockCount*16),zeroFractions=Array.from({length:blockCount},(_,index)=>zeroStats[index*4]);
-      const shapes=await gpuVariance(device,energy,w*h*count,make,read,rules);
+      const shapes=await gpuVariance(device,energy,w*h*count,make,read,rules,destroy);
       const informed=shapes.informative&&zeroFractions.filter(value=>value<rules.zero_fraction).length>=rules.min_blocks;
       const model=informed?shapes.informative:shapes.legacy;
       blur(original,current,1);blur(current,smooth,2);dispatch(2,smooth,sigma,smooth,model);
@@ -260,7 +273,8 @@ var<workgroup> sums:array<u32,256>;
       if(![model.a,model.b,model.c,...rows.flat()].every(Number.isFinite))throw Error("Non-finite GPU noise measurement.");
       return {model:result,duration_ms:performance.now()-start,measured_pixels:w*h*count,version:VERSION};
     } finally {
-      await device.queue.onSubmittedWorkDone().catch(()=>{});for(const buffer of owned)buffer.destroy();
+      try { await device.queue.onSubmittedWorkDone(); } catch {}
+      for(const buffer of owned.keys())destroy(buffer);
       const validation=await device.popErrorScope(),oom=await device.popErrorScope();if(validation||oom)throw Error((validation||oom).message);
     }
   }
@@ -273,11 +287,11 @@ var<workgroup> sums:array<u32,256>;
     await Promise.all([pipeline(device),histogramPipelines.get(device)]);
   }
   const turns = new WeakMap();
-  function serialMeasure(device, description, pixels, budget, signal) {
+  function serialMeasure(device, description, pixels, budget, signal, onBytesChanged) {
     const previous = turns.get(device) || Promise.resolve();
     const result = previous.catch(() => {}).then(() => {
       signal?.throwIfAborted();
-      return measure(device, description, pixels, budget);
+      return measure(device, description, pixels, budget, onBytesChanged);
     });
     turns.set(device, result);
     result.finally(() => { if (turns.get(device) === result) turns.delete(device); }).catch(() => {});

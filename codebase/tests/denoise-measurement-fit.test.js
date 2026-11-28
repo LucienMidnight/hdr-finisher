@@ -9,7 +9,8 @@ const root = path.resolve(__dirname, '..');
 const data = JSON.parse(execFileSync(pythonExecutable(), [path.join(__dirname, 'helpers/denoise_calibration_fixture.py')], {
   cwd: root, env: {...process.env, PYTHONPATH: path.join(root, 'backend')}, encoding: 'utf8',
 }));
-const context = vm.createContext({window: {}, AbortController});
+const context = vm.createContext({window: {}, AbortController, performance,
+  GPUBufferUsage: { STORAGE: 1, COPY_DST: 2, COPY_SRC: 4 }});
 vm.runInContext(fs.readFileSync(path.join(root, 'frontend/denoise-measurement.js'), 'utf8'), context);
 const measurement = context.window.HDRDenoiseMeasurement;
 
@@ -26,6 +27,39 @@ test('CPU and GPU host fit sparse or repeated brightness observations alike', ()
 test('measurement revision agrees with the CPU source contract', () => {
   assert.equal(measurement.version, data.version);
   assert.notEqual(measurement.version, 'adaptive-measure-signed-source-v2');
+});
+
+test('measurement reports only owned buffer bytes and clears them after a failed allocation', async () => {
+  let liveBytes = 0, attempts = 0, destroyed = 0, finish, started;
+  const fence = new Promise(resolve => { finish = resolve; });
+  const draining = new Promise(resolve => { started = resolve; });
+  const device = {
+    limits: { maxStorageBufferBindingSize: 1 << 20 },
+    createShaderModule: () => ({}), createComputePipelineAsync: async () => ({}),
+    pushErrorScope() {}, popErrorScope: async () => null,
+    createBuffer({ size }) {
+      if (++attempts === 9) throw Error('test GPU allocation refusal');
+      liveBytes += size;
+      return { destroy() { liveBytes -= size; destroyed++; } };
+    },
+    queue: { onSubmittedWorkDone() { started(); return fence; } },
+  };
+  const samples = [];
+  const pending = measurement.measure(device, { version: data.version, calibration: data.rules,
+    width: 16, height: 16, windows: [{}] }, new Float32Array(16 * 16 * 4), undefined, undefined, bytes => {
+    assert.equal(bytes, liveBytes);
+    samples.push(bytes);
+  });
+  const rejected = assert.rejects(pending, /test GPU allocation refusal/);
+  await draining;
+  assert.equal(liveBytes, 16 * 16 * 16 * 8);
+  assert.equal(samples.at(-1), liveBytes);
+  assert.equal(destroyed, 0);
+  finish();
+  await rejected;
+  assert.equal(samples.at(-1), 0);
+  assert.equal(liveBytes, 0);
+  assert.equal(destroyed, 8);
 });
 
 for (const fixture of data.fixtures) {

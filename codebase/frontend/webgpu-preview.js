@@ -233,6 +233,7 @@
       this.pendingGpuRetireBytes = 0;
       this.gpuRetireFences = new Map();
       this.fineGrainTransientBytes = 0;
+      this.denoiseMeasurementBytes = 0;
       this.hslSelectionResources = new Map();
       this.claritySurroundEntries = new Set();
       // Planner state. The budget is an application allocation budget
@@ -1278,6 +1279,7 @@
         denoiseEvidenceBytes,
         denoiseReconstructionScratchBytes,
         denoiseResolvedBytes,
+        denoiseMeasurementBytes: this.denoiseMeasurementBytes,
         fineGrainReducedBytes: this.fineGrainReducedBytes() + this.fineGrainTransientBytes,
         parameterBufferBytes,
         presentationSurfaceBytes,
@@ -7940,7 +7942,14 @@
           const pixels = new Float32Array(body, 4 + length);
           const snapshot = this.resourceMemorySnapshot();
           const budget = Math.max(0, this.memoryBudgetBytes() - snapshot.totals.peakLogicalBytes);
-          const result = await HDRDenoiseMeasurement.measure(device, description, pixels, budget, signal);
+          const owner = { byteSize: 0, allocatorEntry: null };
+          const result = await HDRDenoiseMeasurement.measure(device, description, pixels, budget, signal, bytes => {
+            this.denoiseMeasurementBytes += bytes - owner.byteSize;
+            owner.byteSize = bytes;
+            if (!bytes) this.gpuCacheRelease(owner);
+            else if (owner.allocatorEntry) this.syncGpuCacheBytes(owner);
+            else owner.allocatorEntry = this.gpuAllocator?.register({ kind: "denoise-measurement", bytes, pinned: true });
+          });
           signal.throwIfAborted();
           const stored = await fetch(measurementURL, { method: "POST", signal, headers: headers({ "Content-Type": "application/json" }),
             body: JSON.stringify({ ...result, key: description.key, width: description.source_width,
