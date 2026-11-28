@@ -956,16 +956,7 @@
       this.orientedLuminanceInflight.clear();
       this.maskExtents?.clear();
       for (const intermediate of this.intermediates.values()) {
-        this.destroyAfterActiveRenders(() => {
-          intermediate.baseTexture?.destroy();
-          intermediate.filmTexture?.destroy();
-          intermediate.spatialATexture?.destroy();
-          intermediate.spatialBTexture?.destroy();
-          intermediate.lensGlowTexture?.destroy();
-          intermediate.localTexture?.destroy();
-          intermediate.detailATexture?.destroy();
-          intermediate.detailBTexture?.destroy();
-        });
+        this.destroyAfterActiveRenders(() => this.destroyIntermediate(intermediate));
       }
       this.intermediates.clear();
       for (const key of this.localMasks.keys()) this.evictGpuCacheEntry("local-mask", key);
@@ -2315,8 +2306,13 @@
       if (this.tileGraphMatches(current, width, height, outputFormat, sourceFormat, spatialActive, denoiseActive, spatialGrid, detailScratch)) {
         return current;
       }
-      this.destroyTileGraph(graphKey);
-      const make = (format, usage) => this.device.createTexture({
+      const allocated = [];
+      const makeTexture = descriptor => {
+        const texture = this.device.createTexture(descriptor);
+        allocated.push(texture);
+        return texture;
+      };
+      const make = (format, usage) => makeTexture({
         size: { width, height }, format, usage,
       });
       const attachment = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
@@ -2324,11 +2320,12 @@
       // each axis, the same ratio the Direct graph uses.
       const spatialWidth = Math.max(1, Math.ceil(width / spatialGrid));
       const spatialHeight = Math.max(1, Math.ceil(height / spatialGrid));
-      const makeSpatial = (extraUsage = 0) => this.device.createTexture({
+      const makeSpatial = (extraUsage = 0) => makeTexture({
         size: { width: spatialWidth, height: spatialHeight }, format: "rgba16float", usage: attachment | extraUsage,
       });
+      let next;
       try {
-        this[graphKey] = {
+        next = {
           width,
           height,
           outputFormat,
@@ -2354,7 +2351,7 @@
           // on a 42 MP frame, and allocating it is what used to put a denoised
           // Full over any budget.
           denoiseResolvedTexture: denoiseActive
-            ? this.device.createTexture({
+            ? makeTexture({
               label: "tile-denoise-resolved",
               size: { width, height },
               format: "rgba16float",
@@ -2365,10 +2362,12 @@
           byteSize: this.tileGraphBytes(width, height, sourceFormat, spatialActive, denoiseActive, spatialGrid, detailScratch),
         };
       } catch (error) {
+        allocated.forEach(texture => texture.destroy());
         this.recordAllocationFailure("tile-graph", error, { width, height });
-        this[graphKey] = null;
         return null;
       }
+      this.destroyTileGraph(graphKey);
+      this[graphKey] = next;
       this.recordAllocation("tile-graph", this[graphKey].byteSize, { width, height });
       if (this.gpuAllocator) {
         // A pinned reservation: the graph is the pass's own working set, never
@@ -2388,7 +2387,7 @@
         this.gpuAllocator?.unregister(graph.allocatorEntry);
         graph.allocatorEntry = null;
       }
-      this.destroyAfterActiveRenders(() => {
+      this.retireGpuResource(graph.byteSize, () => {
         graph.sourceTexture?.destroy();
         graph.baseTexture?.destroy();
         graph.localTexture?.destroy();

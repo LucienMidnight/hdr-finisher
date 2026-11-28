@@ -157,6 +157,36 @@ test("grading residency reports the four core textures the device actually creat
   assert.equal(resources.gradingIntermediateBytes, ledger.liveTextureBytes);
 });
 
+test("session reset destroys the finished Direct texture as well as its companions", () => {
+  const { preview, ledger } = createPreview();
+  preview.ensureIntermediate({}, 640, 480, true, true, true);
+  preview.activeRenderCount = 1;
+  preview.resetSession("next");
+  assert.equal(preview.intermediates.size, 0);
+  assert.ok(ledger.liveBytes > 0, "the old encoder can still own the texture");
+  preview.finishActiveRender();
+  assert.equal(ledger.liveBytes, 0);
+  assert.equal(ledger.destroyed.length, ledger.created.length);
+});
+
+test("tile graph allocation failure rolls back partial textures and keeps the previous graph", () => {
+  const { preview, ledger } = createPreview();
+  const graph = preview.ensureTileGraph(64, 64, "rgba16float", "rgba16float");
+  const bytes = ledger.liveBytes;
+  const allocate = preview.device.createTexture;
+  let attempts = 0;
+  preview.device.createTexture = descriptor => {
+    if (++attempts === 8) throw Error("GPU allocation refused");
+    return allocate(descriptor);
+  };
+  assert.equal(preview.ensureTileGraph(128, 128, "rgba16float", "rgba16float", true, true), null);
+  assert.equal(attempts, 8);
+  assert.equal(preview.tileGraph, graph);
+  assert.equal(ledger.liveBytes, bytes);
+  assert.equal(ledger.destroyed.length, 7);
+  assert.equal(preview.gpuAllocator.usedBytes(), bytes);
+});
+
 test("resident total equals live device bytes across detail, spatial, scope, and parameter allocations", () => {
   const { preview, ledger } = createPreview();
   const canvas = {};
