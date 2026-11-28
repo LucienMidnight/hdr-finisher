@@ -89,7 +89,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/grade-panel-order.test.js | both lanes interleave the same live sections without losing their identity or fold state | 3 | 0.0093 | unknown |  |
 | tests/grade-paste.test.js | paste selection preserves partial choices and inactive lane values | 18 | 0.036 | unknown |  |
 | tests/grade-preview-settle.test.js | a zoomed tiled edit settles exactly once after edit sync and requests one scope | 14 | 3.3591 | unknown |  |
-| tests/grade-speed.test.js | only interactive and coarse requests reduce grain, never delivery or measurement | 14 | 0.1095 | unknown |  |
+| tests/grade-speed.test.js | only interactive and coarse requests reduce grain, never delivery or measurement | 16 | 0.1095 | unknown |  |
 | tests/grade-tile-reuse.test.js | catch-up reuses tiles when the saved revision is the only change | 6 | 0.0636 | unknown |  |
 | tests/grading-preset-files.test.js | saved grading presets round trip without changing settings | 7 | 0.0106 | unknown |  |
 | tests/grain-route.test.js | the help line appears only when the slower CPU route is used or the method cannot run | 21 | 0.7219 | unknown |  |

@@ -858,7 +858,7 @@
       "suite": "node",
       "area": "grade",
       "purpose": "only interactive and coarse requests reduce grain, never delivery or measurement",
-      "test_count": 14,
+      "test_count": 16,
       "seconds": {
         "windows": 0.1095,
         "mac": null

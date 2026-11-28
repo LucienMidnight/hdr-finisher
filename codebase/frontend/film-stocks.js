@@ -3,13 +3,9 @@
 
   // Film stock data for the WebGPU film pass.
   //
-  // Each stock's manifest and shared compressed float32 arrays
-  // (expanded by GET /api/film-stocks/<id>) are fetched once and packed into one
-  // fixed-size slot of floats. The renderer copies loaded slots into a single
-  // storage buffer, and the film pass finds a lane's stock by its slot number
-  // (FILM_STOCK_SLOT, 0 while the data has not arrived). The shader's chain
-  // mirrors backend/hdr_finisher/film_stock.py: clamped linear 1D lookups and
-  // clamped trilinear 3D lookups, with the same float32 scale factors.
+  // The static stock/paper/scanner data is packed once. Contrast variants
+  // share that data and carry only their own print curve. The shader still
+  // reads the same fixed-size slot, so the numerical path is unchanged.
 
   const IDS = Object.freeze([
     "kodak_portra_400",
@@ -129,84 +125,166 @@
 
   const VARIANT_IDS = Object.freeze(Array.from({length: 8}, (_, i) => `variant-${i}`));
   const ALL_IDS = Object.freeze([...IDS, "none", ...VARIANT_IDS]);
-  const variantKeys = new Map();
-  let nextVariant = 0;
-
-  function recipe(id, film = {}) {
-    const push = Number(film.push_pull) || 0;
-    if (id === "kodak_portra_800" && (push === 1 || push === 2)) id += `_push${push}`;
-    const query = new URLSearchParams();
-    const slide = ["fujifilm_provia_100f", "fujifilm_velvia_100", "kodak_ektachrome_100", "kodak_kodachrome_64"].includes(id);
-    if (slide) film = {lab_levels: film.lab_levels};
-    if (film.print_paper && film.print_paper !== "default") query.set("paper", film.print_paper);
-    for (const [field, key] of [["print_contrast", "contrast"], ["shadow_contrast", "shadows"], ["highlight_contrast", "highlights"]]) {
-      if (Number(film[field])) query.set(key, String(Number(film[field])));
-    }
-    if (film.lab_levels) query.set("lab_levels", "true");
-    const suffix = query.toString();
-    return {id, key: suffix ? `${id}?${suffix}` : id};
-  }
-
-  const packed = new Map();
+  const fixed = new Map();
+  const variants = new Map();
+  const pendingBases = new Map();
   const pending = new Map();
   const failed = new Set();
   const listeners = new Set();
   let version = 0;
 
+  function recipe(id, film = {}) {
+    const push = Number(film.push_pull) || 0;
+    if (id === "kodak_portra_800" && (push === 1 || push === 2)) id += `_push${push}`;
+    const slide = ["fujifilm_provia_100f", "fujifilm_velvia_100", "kodak_ektachrome_100", "kodak_kodachrome_64"].includes(id);
+    const paper = new URLSearchParams();
+    if (!slide && film.print_paper && film.print_paper !== "default") paper.set("paper", film.print_paper);
+    const base = new URLSearchParams(paper);
+    if (film.lab_levels) base.set("lab_levels", "true");
+    const curves = new URLSearchParams(paper);
+    if (!slide) {
+      for (const [field, key] of [["print_contrast", "contrast"], ["shadow_contrast", "shadows"], ["highlight_contrast", "highlights"]]) {
+        if (Number(film[field])) curves.set(key, String(Number(film[field])));
+      }
+    }
+    const baseKey = base.size ? `${id}?${base}` : id;
+    const curveQuery = curves.size > paper.size ? curves.toString() : null;
+    return { id, baseKey, curveQuery, key: curveQuery ? `${baseKey}|${curveQuery}` : baseKey };
+  }
+
+  function retain(id, key, base, curve = null) {
+    const serial = ++version;
+    if (key === id) {
+      const index = ALL_IDS.indexOf(id);
+      fixed.set(key, { index, base, curve, serial });
+    } else {
+      let index = ALL_IDS.length - VARIANT_IDS.length + variants.size;
+      if (variants.size === VARIANT_IDS.length) {
+        const oldest = variants.keys().next().value;
+        index = variants.get(oldest).index;
+        variants.delete(oldest);
+      }
+      variants.set(key, { index, base, curve, serial });
+    }
+  }
+
+  function findRecipe(key) {
+    const entry = variants.get(key);
+    if (!entry) return fixed.get(key);
+    variants.delete(key);
+    variants.set(key, entry);
+    return entry;
+  }
+
+  function findBase(key) {
+    if (fixed.has(key)) return fixed.get(key).base;
+    for (const {base} of variants.values()) {
+      if (base.key === key) return base;
+    }
+    return null;
+  }
+
+  async function download(path, id) {
+    const response = await fetch(`/api/film-stocks/${path}`);
+    if (!response.ok) throw new Error(`Film stock ${id} is unavailable (${response.status}).`);
+    return response;
+  }
+
+  function requestBase(id, key) {
+    const loaded = findBase(key);
+    if (loaded) return loaded;
+    if (!pendingBases.has(key)) {
+      const task = download(key, id).then(response => response.json()).then(document => {
+        const base = { key, token: Symbol(key), data: packFilmStock(document) };
+        // Publish the base as soon as it arrives, including when a saved
+        // grade opens with a nonzero contrast. No separate retained cache.
+        retain(id, key, base);
+        return base;
+      }).finally(() => pendingBases.delete(key));
+      pendingBases.set(key, task);
+    }
+    return pendingBases.get(key);
+  }
+
+  async function requestPrintCurve(id, query) {
+    const response = await download(`${id}/print-curve?${query}`, id);
+    const bytes = new DataView(await response.arrayBuffer());
+    if (bytes.byteLength !== CURVE_FLOATS * 4) throw new Error(`Film stock ${id} has an invalid print curve.`);
+    const curve = Float32Array.from({ length: CURVE_FLOATS }, (_, i) => bytes.getFloat32(i * 4, true));
+    if (!curve.every(Number.isFinite)) throw new Error(`Film stock ${id} has a non-finite print curve.`);
+    return curve;
+  }
+
   function notify(id) {
-    version += 1;
     listeners.forEach((listener) => {
       try { listener(id); } catch (error) { console.error(error); }
     });
   }
 
-  function request(stockId, film = {}) {
-    if (stockId === "none" && !["stock_exposure", "stock_separation", "stock_print_warmth", "stock_print_tint", "stock_preflash",
-      "push_pull", "print_exposure", "print_contrast", "shadow_contrast", "highlight_contrast", "lab_levels"].some(key => Number(film[key]))
-      && (!film.print_paper || film.print_paper === "default")) return null;
-    const {id, key} = recipe(stockId, film);
-    if (!(IDS.includes(id) || id === "none") || packed.has(key) || variantKeys.has(key) || pending.has(key) || failed.has(key)) return pending.get(key) || null;
-    if (typeof fetch !== "function") return null;
-    const task = fetch(`/api/film-stocks/${key}`)
-      .then((response) => {
-        if (!response.ok) throw new Error(`Film stock ${id} is unavailable (${response.status}).`);
-        return response.json();
-      })
-      .then((document) => {
-        const data = packFilmStock(document);
-        if (key === id) packed.set(id, data);
-        else {
-          const slotId = VARIANT_IDS[nextVariant++ % VARIANT_IDS.length];
-          for (const [oldKey, oldId] of variantKeys) if (oldId === slotId) variantKeys.delete(oldKey);
-          variantKeys.set(key, slotId);
-          packed.set(slotId, data);
-        }
-        pending.delete(key);
-        notify(id);
+  function requestRecipe({id, baseKey, curveQuery, key}, redraw = false) {
+    if (!(IDS.includes(id) || id === "none") || findRecipe(key) || failed.has(key)
+      || typeof fetch !== "function") return null;
+    const existing = pending.get(key);
+    if (existing) {
+      existing.redraw ||= redraw;
+      return existing.task;
+    }
+    const load = { redraw };
+    load.task = Promise.all([requestBase(id, baseKey), curveQuery && requestPrintCurve(id, curveQuery)])
+      .then(([base, curve]) => {
+        if (!findRecipe(key)) retain(id, key, base, curve);
       })
       .catch((error) => {
-        pending.delete(key);
+        if (failed.size === ALL_IDS.length) failed.delete(failed.values().next().value);
         failed.add(key);
         console.warn(error?.message || error);
+      })
+      .finally(() => {
+        pending.delete(key);
+        // Only an immediate slot lookup can have drawn without the data.
+        // A render which awaits request() does not need invalidating.
+        if (load.redraw && findRecipe(key)) notify(id);
       });
-    pending.set(key, task);
-    return task;
+    pending.set(key, load);
+    return load.task;
   }
 
-  /**
-   * The slot number the film pass reads for a stock: its position in IDS
-   * plus one, or 0 while its data is not loaded (the stage then stays off and
-   * the preview re-renders when the data arrives). Asking starts the load.
-   */
+  function usesStock(stockId, film) {
+    return stockId !== "none" || ["stock_exposure", "stock_separation", "stock_print_warmth", "stock_print_tint", "stock_preflash",
+      "push_pull", "print_exposure", "print_contrast", "shadow_contrast", "highlight_contrast", "lab_levels"].some(key => Number(film[key]))
+      || (film.print_paper && film.print_paper !== "default");
+  }
+
+  function request(stockId, film = {}) {
+    return usesStock(stockId, film) ? requestRecipe(recipe(stockId, film)) : null;
+  }
+
+  // Zero means the stock is not ready. For callers that cannot await the
+  // stock, signal when this exact recipe becomes available.
   function slot(stockId, film = {}) {
-    const {id, key} = recipe(stockId, film);
-    if (!(IDS.includes(id) || id === "none")) return 0;
-    const slotId = key === id ? id : variantKeys.get(key);
-    if (!slotId || !packed.has(slotId)) {
-      request(stockId, film);
-      return 0;
+    const resolved = recipe(stockId, film);
+    const entry = findRecipe(resolved.key);
+    if (entry) return entry.index + 1;
+    if (usesStock(stockId, film)) requestRecipe(resolved, true);
+    return 0;
+  }
+
+  function writeLoadedSlots(queue, buffer, uploads) {
+    for (const entries of [fixed, variants]) {
+      for (const {index, base, curve, serial} of entries.values()) {
+        const previous = uploads.get(index);
+        if (previous?.serial === serial) continue;
+        const offset = index * SLOT_FLOATS * 4;
+        const writeBase = previous?.base !== base.token;
+        if (writeBase) queue.writeBuffer(buffer, offset, base.data);
+        if (curve || (!writeBase && previous.curve)) {
+          const rows = curve ?? base.data.subarray(LAYOUT.PRINT_CURVES, LAYOUT.PRINT_CURVES + CURVE_FLOATS);
+          queue.writeBuffer(buffer, offset + LAYOUT.PRINT_CURVES * 4, rows);
+        }
+        // Tokens do not keep evicted CPU tables alive for a renderer.
+        uploads.set(index, { base: base.token, curve: Boolean(curve), serial });
+      }
     }
-    return ALL_IDS.indexOf(slotId) + 1;
   }
 
   const HDRFilmStocks = Object.freeze({
@@ -220,12 +298,19 @@
     packFilmStock,
     request,
     slot,
-    packedSlot: (id) => packed.get(id) || null,
-    loadedIds: () => ALL_IDS.filter((id) => packed.has(id)),
+    writeLoadedSlots,
+    get loadedCount() { return fixed.size + variants.size; },
+    loadedIds: () => [...fixed.values(), ...variants.values()]
+      .sort((a, b) => a.index - b.index).map(({index}) => ALL_IDS[index]),
     get version() { return version; },
     onLoad(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     /** Test seam: install packed data without the network. */
-    install(id, document) { packed.set(id, packFilmStock(document)); failed.delete(id); notify(id); },
+    install(id, document) {
+      if (!(IDS.includes(id) || id === "none")) return;
+      retain(id, id, { key: id, token: Symbol(id), data: packFilmStock(document) });
+      failed.delete(id);
+      notify(id);
+    },
   });
 
   if (typeof window !== "undefined") window.HDRFilmStocks = HDRFilmStocks;
