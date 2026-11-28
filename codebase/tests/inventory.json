@@ -546,6 +546,20 @@
       "platform_notes": []
     },
     {
+      "file": "tests/fit-filtering-compare.test.js",
+      "suite": "node",
+      "area": "preview",
+      "purpose": "Fit-filtering screenshot metrics, crop extraction and Lanczos resampling",
+      "test_count": 14,
+      "seconds": {
+        "windows": null,
+        "mac": 0.0032
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
       "file": "tests/font-tokens.test.js",
       "suite": "node",
       "area": "font",

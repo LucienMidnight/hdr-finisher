@@ -15,7 +15,7 @@ const {
   lanczosResampleRgba,
   lumaEnergy,
   summarizePair,
-} = require("./fit-filtering-compare.js");
+} = require("./performance/fit-filtering-compare.js");
 
 function buildImage(width, height, pixel) {
   const data = new Uint8Array(width * height * 4);
