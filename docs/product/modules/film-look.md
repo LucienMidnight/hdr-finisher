@@ -9,8 +9,33 @@ changes the exact specks in existing grades, including saved test projects.
 The Film Grain stage no longer draws a different sample budget during a
 drag. CPU fallback, Direct, Tiled, Proof and export use the same design.
 No new caches or GPU textures are retained. CPU work still yields between
-bounded scratch blocks. Visual sign-off and measured application acceptance
-remain open under the fast Film Look brief.
+bounded scratch blocks.
+
+Calibration with the old field (`aee3d656`) compared 20 stock profiles,
+the unstocked Colour Negative and Black & White controls, Size 0/30/50/100,
+four tone levels and both photos' Fit and 100% scales. At Sizes 30–100,
+Colour Negative retains 84–100% of the old grain RMS and its half-power
+frequency is within 22% in either direction. Black & White retains 82–105%
+of RMS at these sizes. A broader silver shadow band restores contrast, but
+the darkest Fit swatches at Size 30 still put more power in fine texture.
+At Size 0, zoomed-out texture is genuinely quieter: the weakest swatches
+retain about two-thirds of the old RMS. The new filter averages the whole
+pixel, whereas four-by-four sampling left some fine texture at Fit.
+
+For example, on the Canon Fit midtone swatch at Size 30, RMS in stops went
+0.0316 → 0.0311 on Portra 400, 0.0301 → 0.0295 on Ektar 100 and
+0.0147 → 0.0144 on Velvia 100. At 100% those same swatches went
+0.0972 → 0.0846, 0.0916 → 0.0799 and 0.0437 → 0.0383. These are tone-patch
+measurements, not a claim that visible specks or colour are identical.
+`codebase/output/f1-grain/calibration.csv` contains all 1,408 paired
+comparisons, including contrast, chroma, skew and the radial frequencies.
+Reproduce with `.venv/bin/python tools/film-grain-calibration.py` from
+`codebase`.
+
+Grain alone measured 6.7 ms at Fit on both RAWs and 2.1 ms for a native
+1024² tile. Full-size CPU export was 36–38% shorter in the measured SDR PNG
+recipe. See the performance table for conditions. Full-application Film
+acceptance and visual sign-off remain open under the fast Film Look brief.
 
 ## November 28: Print Contrast reuses stock tables
 
