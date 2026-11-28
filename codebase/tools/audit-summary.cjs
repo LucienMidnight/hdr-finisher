@@ -168,10 +168,13 @@ function validateRun(run, where = 'module-impact-v1') {
           actualLongEdge: x => integer(x) && x > 0 && x < sample.requestedLongEdge,
           first_feedback_ms: nullable(nonnegative), settle_ms: nonnegative, drained_ms: nonnegative,
           whole_wait_ms: nonnegative, signature: string, memory_mb: object }, sampleAt);
+        if ('first_frame_ms' in sample) need(sample.first_frame_ms, nullable(nonnegative), `${sampleAt}.first_frame_ms`);
       }
       const exactCount = count - reduced.length;
       for (const key of CLOCKS) validateStats(s[key], `${stepAt}.${key}`, exactCount);
-      if ('whole_wait_ms' in s) validateStats(s.whole_wait_ms, `${stepAt}.whole_wait_ms`, exactCount);
+      for (const key of ['first_frame_ms', 'whole_wait_ms']) {
+        if (key in s) validateStats(s[key], `${stepAt}.${key}`, exactCount);
+      }
       fields(s.memory_mb, Object.fromEntries(MEMORY.map(key => [key, nullable(nonnegative)])), `${stepAt}.memory_mb`);
       if (s.kind === 'probe') need(s.step, oneOf(...PROBES), `${stepAt}.step`);
       if (m.status === 'complete' && !s.skipped) {
@@ -353,6 +356,12 @@ function markdown(runs, findings, comparison, result) {
       for (const p of m.impact) lines.push(row(label, p.probe, delta(p.first_feedback_delta_ms, p.first_feedback_delta_pct),
         delta(p.settle_delta_ms, p.settle_delta_pct), rounded(p.footprint_delta_mb), p.flags.join(', ') || '—'));
     }
+    const frames = run.modules.flatMap(m => m.steps.filter(s => med(s, 'first_frame_ms') !== null)
+      .map(s => row(`${m.module} / ${m.lane}`, s.step, s.state,
+        rounded(med(s, 'first_frame_ms')), rounded(med(s, 'first_feedback_ms')))));
+    if (frames.length) lines.push('', '### First presented frames', '',
+      row('Module / lane', 'Step', 'State', 'First frame ms', 'First feedback ms'),
+      row('---', '---', '---', '---:', '---:'), ...frames);
     lines.push('', '### Exceptions', '');
     const exceptions = run.modules.flatMap(m => [
       ...m.errors.map(e => `- ${m.module} — ${cell(e)}`),
