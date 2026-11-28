@@ -4019,7 +4019,7 @@ Test-only named GPU timestamps; preserves draw commands and releases query resou
 
 #### `tests/performance/grade-module-impact.js`
 
-Measures isolated Grade controls and paired ON/OFF probe latency, memory, and pixel changes in a disposable Electron session. Writes module-impact-v1 JSON. Run one photo and zoom per invocation under the shared GPU lock.
+Measures isolated Grade controls and paired ON/OFF probe latency, memory, and pixel changes in a disposable Electron session. Writes module-impact-v1 JSON with separate first presented GPU frame and still-current feedback timings. Run one photo and zoom per invocation under the shared GPU lock.
 
 - Expected minutes: Windows unknown; Mac unknown.
 - Unmeasured default deadline: 15 minutes. undefined

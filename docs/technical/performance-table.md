@@ -1,3 +1,22 @@
+## November 28, 2026 — Grade audit first presented GPU frame
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794 at 2×, mains power, shared GPU lock.
+HDR Fit on IMG_7723.CR3, three measured samples after one warmup, app
+`a361c44a` with the new audit clock. Values are medians with
+sample ranges in parentheses. This is a measurement change, not an app
+speedup.
+
+| Action | First GPU-fenced presentation | Still-current feedback |
+| --- | ---: | ---: |
+| Bands value drag | 30.7 ms (19.7–33.6) | 48.9 ms (45.8–149.5) |
+| Exposure drag with Film on | 169.1 ms (167.7–184.3) | 1,179.3 ms (1,067.5–1,603.1) |
+
+The Bands check expected a median within 30 ms of the earlier ~50 ms
+animation-frame observation to allow for frame scheduling. The earlier
+diagnostic actually recorded fences at 25–35 ms and the following
+animation-frame checks at 40–49 ms, consistent with the new clock ending
+at the fence.
+
 ## November 28, 2026 — Mac Grade module audit, before and after the cleanup sprint
 
 MacBook Neo, A18 Pro, 8 GB, 1408×794, mains power, GPU lock, nothing else running.
